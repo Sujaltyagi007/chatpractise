@@ -46,8 +46,8 @@ export default function MobileSidebarDrawer({
       {/* Drawer panel */}
       <div
         className={`
-          fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-zinc-900 flex flex-col
-          border-r border-zinc-200 dark:border-zinc-800 shadow-xl
+          fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-stone-900 flex flex-col
+          border-r border-stone-200 dark:border-stone-800 shadow-xl
           transition-transform duration-300 ease-in-out md:hidden
           ${isOpen ? "translate-x-0" : "-translate-x-full"}
         `}
@@ -61,7 +61,7 @@ export default function MobileSidebarDrawer({
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="h-8 w-8 text-zinc-500 hover:text-zinc-900 dark:hover:text-white"
+            className="h-8 w-8 text-stone-500 hover:text-stone-900 dark:hover:text-white"
             aria-label="Close navigation"
           >
             <X className="h-4 w-4" />

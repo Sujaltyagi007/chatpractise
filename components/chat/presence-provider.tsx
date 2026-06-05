@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { updatePresence } from "@/lib/actions/auth";
 
 type PresenceState = Record<string, boolean>;
 
@@ -18,9 +17,6 @@ export function PresenceProvider({
   const [onlineUsers, setOnlineUsers] = useState<PresenceState>({});
 
   useEffect(() => {
-    // Optimistic fallback for database
-    updatePresence(true);
-
     const supabase = createClient();
     const channel = supabase.channel("global");
 
@@ -47,7 +43,6 @@ export function PresenceProvider({
 
     return () => {
       supabase.removeChannel(channel);
-      updatePresence(false);
     };
   }, [currentUserId]);
 

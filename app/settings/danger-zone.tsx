@@ -26,12 +26,12 @@ export default function DangerZone() {
   return (
     <>
       {/* Danger Zone Card */}
-      <div className="bg-white dark:bg-zinc-900 border border-red-200 dark:border-red-900/40 rounded-2xl p-6">
+      <div className="bg-white dark:bg-stone-900 border border-red-200 dark:border-red-900/40 rounded-2xl p-6">
         <div className="flex items-center gap-2 mb-3">
           <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
           <h2 className="text-sm font-semibold text-red-600 dark:text-red-400">Danger Zone</h2>
         </div>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
+        <p className="text-sm text-stone-600 dark:text-stone-400 mb-4">
           Permanently delete your account and all associated data. This action cannot be undone.
         </p>
         <Button
@@ -47,23 +47,23 @@ export default function DangerZone() {
       {/* Confirmation Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl max-w-sm w-full p-6 space-y-4">
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-2xl max-w-sm w-full p-6 space-y-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-red-100 dark:bg-red-950/50 flex items-center justify-center shrink-0">
                 <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
               </div>
               <div>
-                <h2 className="text-base font-semibold text-zinc-900 dark:text-white">Delete Account</h2>
-                <p className="text-xs text-zinc-500">This action is permanent and irreversible.</p>
+                <h2 className="text-base font-semibold text-stone-900 dark:text-white">Delete Account</h2>
+                <p className="text-xs text-stone-500">This action is permanent and irreversible.</p>
               </div>
             </div>
 
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+            <p className="text-sm text-stone-600 dark:text-stone-400 leading-relaxed">
               Your profile, messages, and data will be permanently removed. All your conversations will become inaccessible.
             </p>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400" htmlFor="delete-confirm">
+              <label className="text-xs font-medium text-stone-600 dark:text-stone-400" htmlFor="delete-confirm">
                 Type <span className="font-bold text-red-600 dark:text-red-400">DELETE</span> to confirm
               </label>
               <Input
@@ -71,7 +71,7 @@ export default function DangerZone() {
                 value={confirmText}
                 onChange={(e) => { setConfirmText(e.target.value); setError(null); }}
                 placeholder="DELETE"
-                className={`bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 font-mono ${isConfirmed ? "border-red-400 dark:border-red-600" : ""}`}
+                className={`bg-stone-50 dark:bg-stone-950 border-stone-200 dark:border-stone-800 font-mono ${isConfirmed ? "border-red-400 dark:border-red-600" : ""}`}
                 autoComplete="off"
               />
               {error && <p className="text-xs text-red-500">{error}</p>}

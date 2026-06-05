@@ -1,35 +1,26 @@
 "use client";
 
-import { useState, useRef, useEffect, useTransition, useOptimistic } from "react";
-import {
-  Send, Phone, Video, MoreVertical, Paperclip, Image as ImageIcon,
-  Smile, CheckCheck, Check, Menu, Loader2, Archive, Trash2, Shield,
-  ChevronLeft, X
-} from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import type { ConversationSummary, CurrentUser, MessageDTO } from "@/lib/types/chat";
-import { sendMessage, markMessagesAsSeen } from "@/lib/actions/chat";
-import { archiveConversation, hideConversation, blockUser } from "@/lib/actions/settings";
-import { createClient } from "@/lib/supabase/client";
-import { usePresence } from "./presence-provider";
-import { NoMessagesEmptyState } from "./empty-states";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { usePresence } from "./presence-provider";
+import { createClient } from "@/lib/supabase/client";
+import { NoMessagesEmptyState } from "./empty-states";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { sendMessage, markMessagesAsSeen, getMessages } from "@/lib/actions/chat";
+import type { ConversationSummary, CurrentUser, MessageDTO } from "@/lib/types/chat";
+import { archiveConversation, hideConversation, blockUser } from "@/lib/actions/settings";
+import { useState, useRef, useEffect, useLayoutEffect, useTransition, useOptimistic, useMemo } from "react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Send, Phone, Video, MoreVertical, Paperclip, Smile, CheckCheck, Check, Loader2, Archive, Trash2, Shield, ChevronLeft } from "lucide-react";
 
 interface ConversationViewProps {
   conversation: ConversationSummary;
   currentUser: CurrentUser;
   initialMessages: MessageDTO[];
+  initialHasMore: boolean;
   onToggleSidebar?: () => void;
 }
 
@@ -55,6 +46,7 @@ export default function ConversationView({
   conversation,
   currentUser,
   initialMessages,
+  initialHasMore,
   onToggleSidebar,
 }: ConversationViewProps) {
   const [messageText, setMessageText] = useState("");
@@ -62,26 +54,45 @@ export default function ConversationView({
   const bottomRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  const initialDisplayMessages: DisplayMessage[] = initialMessages.map(m => ({
-    id: m.id,
-    senderId: m.senderId,
-    senderName: m.sender.fullName ?? m.sender.username,
-    senderAvatar: m.sender.avatarUrl ?? undefined,
-    senderUsername: m.sender.username,
-    content: m.content ?? "",
-    time: new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    timestamp: new Date(m.createdAt).getTime(),
-    isSeen: m.messageSeens?.some(seen => seen.userId !== currentUser.id) ?? false,
-  }));
+  const initialDisplayMessages = useMemo(() => {
+    return initialMessages.map(m => ({
+      id: m.id,
+      senderId: m.senderId,
+      senderName: m.sender.fullName ?? m.sender.username,
+      senderAvatar: m.sender.avatarUrl ?? undefined,
+      senderUsername: m.sender.username,
+      content: m.content ?? "",
+      time: new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      timestamp: new Date(m.createdAt).getTime(),
+      isSeen: m.messageSeens?.some(seen => seen.userId !== currentUser.id) ?? false,
+    }));
+  }, [initialMessages, currentUser.id]);
+
+  const [paginatedMessages, setPaginatedMessages] = useState<DisplayMessage[]>([]);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
+  const [scrollAdjust, setScrollAdjust] = useState<{
+    prevScrollHeight: number;
+    prevScrollTop: number;
+  } | null>(null);
+
+  const lastMessageIdRef = useRef<string | null>(null);
 
   const [realtimeMessages, setRealtimeMessages] = useState<DisplayMessage[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
 
-  const supabase = createClient();
+  // Stable Supabase client — never recreated on re-render (fixes typing indicators)
+  const supabaseRef = useRef(createClient());
+  const channelRef = useRef<any>(null);
   const onlineUsers = usePresence();
+  // Track which messages have already been marked seen — prevents repeated DB writes
+  const markedSeenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    const supabase = supabaseRef.current;
     const channel = supabase
       .channel(`realtime:conversation:${conversation.id}`)
       .on(
@@ -90,7 +101,7 @@ export default function ConversationView({
           event: 'INSERT',
           schema: 'public',
           table: 'Message',
-          filter: `conversationId=eq.${conversation.id}`
+          filter: `"conversationId"=eq.${conversation.id}`
         },
         (payload) => {
           const newRecord = payload.new as any;
@@ -106,7 +117,7 @@ export default function ConversationView({
             senderAvatar,
             senderUsername,
             content: newRecord.content ?? "",
-            time: new Date(newRecord.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            time: new Date(newRecord.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
             timestamp: new Date(newRecord.createdAt).getTime(),
             isSeen: false,
           };
@@ -126,20 +137,41 @@ export default function ConversationView({
         },
         (payload) => {
           const newSeen = payload.new as any;
-          if (newSeen.userId !== currentUser.id) {
-            setRealtimeMessages(prev => {
-              if (!prev.some(m => m.id === newSeen.messageId)) {
-                const initialMsg = initialDisplayMessages.find(m => m.id === newSeen.messageId);
-                if (initialMsg) {
-                  return [...prev, { ...initialMsg, isSeen: true }];
-                }
-                return prev;
+          if (newSeen.userId === currentUser.id) return;
+          setRealtimeMessages(prev => {
+            if (!prev.some(m => m.id === newSeen.messageId)) {
+              const initialMsg = initialDisplayMessages.find(m => m.id === newSeen.messageId);
+              if (initialMsg) {
+                return [...prev, { ...initialMsg, isSeen: true }];
               }
-              return prev.map(m => m.id === newSeen.messageId ? { ...m, isSeen: true } : m);
-            });
-          }
+              return prev;
+            }
+            return prev.map(m => m.id === newSeen.messageId ? { ...m, isSeen: true } : m);
+          });
         }
       )
+      .on('broadcast', { event: 'message:new' }, (payload) => {
+        const { message } = payload.payload;
+        if (message.senderId === currentUser.id) return;
+        setRealtimeMessages(prev => {
+          if (prev.some(m => m.id === message.id)) return prev;
+          return [...prev, message];
+        });
+      })
+      .on('broadcast', { event: 'message_seen' }, (payload) => {
+        const { messageId, userId } = payload.payload;
+        if (userId === currentUser.id) return;
+        setRealtimeMessages(prev => {
+          if (!prev.some(m => m.id === messageId)) {
+            const initialMsg = initialDisplayMessages.find(m => m.id === messageId);
+            if (initialMsg) {
+              return [...prev, { ...initialMsg, isSeen: true }];
+            }
+            return prev;
+          }
+          return prev.map(m => m.id === messageId ? { ...m, isSeen: true } : m);
+        });
+      })
       .on('broadcast', { event: 'typing:start' }, (payload) => {
         const { userId, username } = payload.payload;
         if (userId === currentUser.id) return;
@@ -160,19 +192,43 @@ export default function ConversationView({
         if (status === 'CHANNEL_ERROR') setConnectionStatus("disconnected");
       });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation.id, conversation.members, currentUser.id]);
+    channelRef.current = channel;
 
-  const allMessagesMap = new Map<string, DisplayMessage>();
-  initialDisplayMessages.forEach(m => allMessagesMap.set(m.id, m));
-  realtimeMessages.forEach(m => allMessagesMap.set(m.id, m));
-  
-  const mergedMessages = Array.from(allMessagesMap.values()).sort(
-    (a, b) => a.timestamp - b.timestamp
-  );
+    return () => {
+      // M-2: clear pending typing timeout and broadcast stop before unsubscribing
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      channelRef.current?.httpSend({
+        type: 'broadcast',
+        event: 'typing:stop',
+        payload: { userId: currentUser.id },
+      }).catch(() => { });
+      supabase.removeChannel(channel);
+      channelRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id, currentUser.id]);
+
+  useEffect(() => {
+    setPaginatedMessages([]);
+    setHasMore(initialHasMore);
+    lastMessageIdRef.current = null;
+    setRealtimeMessages([]);
+    markedSeenRef.current = new Set(); // reset seen tracking on conversation switch
+  }, [conversation.id, initialHasMore]);
+
+  const mergedMessages = useMemo(() => {
+    const allMessagesMap = new Map<string, DisplayMessage>();
+    paginatedMessages.forEach(m => allMessagesMap.set(m.id, m));
+    initialDisplayMessages.forEach(m => allMessagesMap.set(m.id, m));
+    realtimeMessages.forEach(m => allMessagesMap.set(m.id, m));
+
+    return Array.from(allMessagesMap.values()).sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
+  }, [paginatedMessages, initialDisplayMessages, realtimeMessages]);
 
   const [optimisticMessages, addOptimisticMessage] = useOptimistic(
     mergedMessages,
@@ -181,44 +237,163 @@ export default function ConversationView({
       return [...state, newMsg];
     }
   );
-  
+
   const [isPending, startTransition] = useTransition();
 
-  // Read Receipts local batcher
-  useEffect(() => {
-    const unseenIds = optimisticMessages
-      .filter(m => m.senderId !== currentUser.id && !m.isPending)
-      .filter(m => {
-        const initMsg = initialMessages.find(im => im.id === m.id);
-        const seenByMe = initMsg?.messageSeens?.some(seen => seen.userId === currentUser.id);
-        return !seenByMe;
-      })
-      .map(m => m.id);
+  // C-2: Only mark messages as seen once — never resend the same IDs.
+  // Derive a stable string key so the effect only fires when genuinely new
+  // receivable message IDs appear, not on every optimistic state update.
+  const receivableIds = optimisticMessages
+    .filter(m => m.senderId !== currentUser.id && !m.isPending)
+    .map(m => m.id)
+    .join(",");
 
-    if (unseenIds.length > 0) {
-      markMessagesAsSeen(unseenIds);
+  useEffect(() => {
+    if (!receivableIds) return;
+    const ids = receivableIds.split(",").filter(id => !markedSeenRef.current.has(id));
+    if (ids.length > 0) {
+      ids.forEach(id => markedSeenRef.current.add(id));
+      markMessagesAsSeen(ids);
+      // Notify the sender their messages have been seen
+      ids.forEach(id => {
+        channelRef.current?.send({
+          type: 'broadcast',
+          event: 'message_seen',
+          payload: { messageId: id, userId: currentUser.id },
+        });
+      });
     }
-  }, [optimisticMessages, currentUser.id, initialMessages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receivableIds]);
+
+  const loadMoreMessages = async () => {
+    if (isLoadingMore || !hasMore) return;
+
+    const currentOldestMsg = paginatedMessages[0] || initialDisplayMessages[0];
+    if (!currentOldestMsg) return;
+
+    setIsLoadingMore(true);
+
+    const viewport = scrollViewportRef.current;
+    if (viewport) {
+      setScrollAdjust({
+        prevScrollHeight: viewport.scrollHeight,
+        prevScrollTop: viewport.scrollTop
+      });
+    }
+
+    try {
+      const res = await getMessages(conversation.id, currentOldestMsg.id);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+
+      if (res.messages && res.messages.length > 0) {
+        const newDisplayMsgs: DisplayMessage[] = res.messages.map(m => ({
+          id: m.id,
+          senderId: m.senderId,
+          senderName: m.sender.fullName ?? m.sender.username,
+          senderAvatar: m.sender.avatarUrl ?? undefined,
+          senderUsername: m.sender.username,
+          content: m.content ?? "",
+          time: new Date(m.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+          timestamp: new Date(m.createdAt).getTime(),
+          isSeen: m.messageSeens?.some(seen => seen.userId !== currentUser.id) ?? false,
+        }));
+
+        setPaginatedMessages(prev => [...newDisplayMsgs, ...prev]);
+        setHasMore(res.hasMore);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error("Failed to load older messages:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (scrollAdjust && scrollViewportRef.current) {
+      const viewport = scrollViewportRef.current;
+      const newScrollHeight = viewport.scrollHeight;
+      viewport.scrollTop = scrollAdjust.prevScrollTop + (newScrollHeight - scrollAdjust.prevScrollHeight);
+      setScrollAdjust(null);
+    }
+  }, [paginatedMessages, scrollAdjust]);
+
+  // M-1: Stable ref so IntersectionObserver never needs to be recreated for state changes
+  const loadMoreRef = useRef(loadMoreMessages);
+  loadMoreRef.current = loadMoreMessages;
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [optimisticMessages, typingUsers]);
+    const sentinel = topSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreRef.current();
+        }
+      },
+      {
+        root: scrollViewportRef.current,
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => {
+      observer.disconnect();
+    };
+  }, [conversation.id]); // Only recreate when conversation changes
+
+  useEffect(() => {
+    if (optimisticMessages.length === 0) return;
+    const latestMsg = optimisticMessages[optimisticMessages.length - 1];
+    const latestId = latestMsg.id;
+
+    if (lastMessageIdRef.current && lastMessageIdRef.current !== latestId) {
+      const viewport = scrollViewportRef.current;
+      const isNearBottom = viewport
+        ? (viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 200)
+        : true;
+      const isMe = latestMsg.senderId === currentUser.id;
+
+      if (isMe || isNearBottom) {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    } else if (!lastMessageIdRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" as any });
+    }
+
+    lastMessageIdRef.current = latestId;
+  }, [optimisticMessages, currentUser.id]);
+
+  useEffect(() => {
+    const viewport = scrollViewportRef.current;
+    const isNearBottom = viewport
+      ? (viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 200)
+      : true;
+    if (isNearBottom && Object.keys(typingUsers).length > 0) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [typingUsers]);
 
   const otherUser =
     conversation.type === "DIRECT"
       ? getOtherUser(conversation, currentUser.id)
       : null;
 
-  const displayName =
-    conversation.type === "DIRECT"
-      ? (otherUser?.fullName ?? otherUser?.username ?? "Unknown")
-      : (conversation.name ?? "Group");
+  const displayName = conversation.type === "DIRECT" ? (otherUser?.fullName ?? otherUser?.username ?? "Unknown")
+    : (conversation.name ?? "Group");
 
   const displayAvatar =
     conversation.type === "DIRECT" ? otherUser?.avatarUrl : conversation.imageUrl;
 
   const isOnline =
-    conversation.type === "DIRECT" 
+    conversation.type === "DIRECT"
       ? (otherUser ? (onlineUsers[otherUser.id] ?? otherUser.isOnline) : false)
       : false;
 
@@ -228,7 +403,7 @@ export default function ConversationView({
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
-    
+
     if (diffMins < 1) statusText = "Last seen just now";
     else if (diffMins < 60) statusText = `Last seen ${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
     else if (diffHours < 24) statusText = `Last seen ${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
@@ -259,10 +434,36 @@ export default function ConversationView({
 
     startTransition(async () => {
       addOptimisticMessage(newMsg);
-      await sendMessage(conversation.id, content);
-      
-      // Clear typing indicator instantly
-      supabase.channel(`realtime:conversation:${conversation.id}`).send({
+      const result = await sendMessage(conversation.id, content);
+
+      if (result.message) {
+        const saved = result.message;
+        const displayMsg: DisplayMessage = {
+          id: saved.id,
+          senderId: saved.senderId,
+          senderName: currentUser.fullName ?? currentUser.username,
+          senderAvatar: currentUser.avatarUrl ?? undefined,
+          senderUsername: currentUser.username,
+          content: saved.content ?? "",
+          time: new Date(saved.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+          timestamp: new Date(saved.createdAt).getTime(),
+          isSeen: false,
+        };
+        // Seed sender's own state immediately
+        setRealtimeMessages(prev =>
+          prev.some(m => m.id === displayMsg.id) ? prev : [...prev, displayMsg]
+        );
+
+        // Broadcast the new message to other clients in real-time
+        channelRef.current?.send({
+          type: 'broadcast',
+          event: 'message:new',
+          payload: { message: displayMsg },
+        });
+      }
+
+      // Clear typing indicator instantly via the stable channel ref
+      channelRef.current?.send({
         type: 'broadcast',
         event: 'typing:stop',
         payload: { userId: currentUser.id }
@@ -276,41 +477,42 @@ export default function ConversationView({
     setMessageText(val);
 
     if (val.trim().length > 0) {
-      supabase.channel(`realtime:conversation:${conversation.id}`).send({
+      channelRef.current?.send({
         type: 'broadcast',
         event: 'typing:start',
         payload: { userId: currentUser.id, username: currentUser.fullName ?? currentUser.username }
       });
-      
+
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      
+
       typingTimeoutRef.current = setTimeout(() => {
-        supabase.channel(`realtime:conversation:${conversation.id}`).send({
+        channelRef.current?.send({
           type: 'broadcast',
           event: 'typing:stop',
           payload: { userId: currentUser.id }
         });
+        typingTimeoutRef.current = null;
       }, 2550);
     } else {
-      supabase.channel(`realtime:conversation:${conversation.id}`).send({
+      channelRef.current?.send({
         type: 'broadcast',
         event: 'typing:stop',
         payload: { userId: currentUser.id }
       });
     }
   }
-  
+
   const typingValues = Object.values(typingUsers);
 
   return (
-    <div className="flex flex-col h-full bg-[#070709] text-white">
+    <div className="flex flex-col flex-1 min-h-0 w-full bg-[#070709] text-white">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-850 flex items-center justify-between bg-white/5 dark:bg-[#0c0c12]/80 backdrop-blur-md shrink-0">
+      <div className="px-4 py-3 border-b border-stone-200 dark:border-stone-850 flex items-center justify-between bg-white/5 dark:bg-[#0c0c12]/80 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Mobile Back Button */}
           <Link
             href="/chat"
-            className="md:hidden flex items-center justify-center h-8 w-8 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors"
+            className="md:hidden flex items-center justify-center h-8 w-8 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800/60 transition-colors"
           >
             <ChevronLeft className="h-5.5 w-5.5" />
           </Link>
@@ -320,22 +522,22 @@ export default function ConversationView({
               <div className="relative shrink-0">
                 <Avatar className="h-9 w-9">
                   <AvatarImage src={displayAvatar ?? ""} />
-                  <AvatarFallback className="bg-zinc-800 text-zinc-300 text-sm font-semibold">
+                  <AvatarFallback className="bg-stone-800 text-stone-300 text-sm font-semibold">
                     {displayName.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 {isOnline ? (
                   <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-white dark:ring-[#0c0c12]" />
                 ) : (
-                  <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-zinc-500 ring-2 ring-white dark:ring-[#0c0c12]" />
+                  <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-stone-500 ring-2 ring-white dark:ring-[#0c0c12]" />
                 )}
               </div>
               <div className="min-w-0">
-                <h3 className="font-semibold text-sm text-zinc-950 dark:text-white truncate">
+                <h3 className="font-semibold text-sm text-stone-950 dark:text-white truncate">
                   {displayName}
                 </h3>
-                <p className="text-xs text-zinc-500 flex items-center gap-1">
-                  <span className={isOnline ? "text-green-500 font-medium" : "text-zinc-500"}>{statusText}</span>
+                <p className="text-xs text-stone-500 flex items-center gap-1">
+                  <span className={isOnline ? "text-green-500 font-medium" : "text-stone-500"}>{statusText}</span>
                   {otherUser?.bio ? ` · ${otherUser.bio}` : ""}
                   {connectionStatus === "connecting" && (
                     <span className="flex items-center gap-1 ml-2 text-blue-400">
@@ -350,16 +552,16 @@ export default function ConversationView({
               <div className="relative shrink-0">
                 <Avatar className="h-9 w-9">
                   <AvatarImage src={displayAvatar ?? ""} />
-                  <AvatarFallback className="bg-zinc-800 text-zinc-300 text-sm font-semibold">
+                  <AvatarFallback className="bg-stone-800 text-stone-300 text-sm font-semibold">
                     {displayName.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
               </div>
               <div className="min-w-0">
-                <h3 className="font-semibold text-sm text-zinc-950 dark:text-white truncate">
+                <h3 className="font-semibold text-sm text-stone-950 dark:text-white truncate">
                   {displayName}
                 </h3>
-                <p className="text-xs text-zinc-500 flex items-center gap-1">
+                <p className="text-xs text-stone-500 flex items-center gap-1">
                   <span>{statusText}</span>
                   {connectionStatus === "connecting" && (
                     <span className="flex items-center gap-1 ml-2 text-blue-400">
@@ -377,14 +579,14 @@ export default function ConversationView({
           <Button
             variant="ghost"
             size="icon"
-            className="text-zinc-400 hover:text-white hover:bg-zinc-800/40 cursor-pointer"
+            className="text-stone-400 hover:text-white hover:bg-stone-800/40 cursor-pointer"
           >
             <Phone className="h-4.5 w-4.5" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="text-zinc-400 hover:text-white hover:bg-zinc-800/40 cursor-pointer"
+            className="text-stone-400 hover:text-white hover:bg-stone-800/40 cursor-pointer"
           >
             <Video className="h-4.5 w-4.5" />
           </Button>
@@ -395,7 +597,7 @@ export default function ConversationView({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-zinc-400 hover:text-white hover:bg-zinc-800/40 cursor-pointer"
+                  className="text-stone-400 hover:text-white hover:bg-stone-800/40 cursor-pointer"
                   aria-label="More options"
                 >
                   <MoreVertical className="h-4.5 w-4.5" />
@@ -405,7 +607,7 @@ export default function ConversationView({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-48 bg-zinc-900 border-zinc-800 text-zinc-200"
+              className="w-48 bg-stone-900 border-stone-800 text-stone-200"
             >
               <DropdownMenuItem
                 onClick={async () => {
@@ -418,7 +620,7 @@ export default function ConversationView({
                     toast.error(res.error ?? "Failed to archive conversation");
                   }
                 }}
-                className="text-sm p-2 text-zinc-300 gap-2 cursor-pointer focus:bg-zinc-800 focus:text-white"
+                className="text-sm p-2 text-stone-300 gap-2 cursor-pointer focus:bg-stone-800 focus:text-white"
               >
                 <Archive className="h-4 w-4" /> Archive Conversation
               </DropdownMenuItem>
@@ -433,13 +635,13 @@ export default function ConversationView({
                     toast.error(res.error ?? "Failed to delete conversation");
                   }
                 }}
-                className="text-sm p-2 text-zinc-300 gap-2 cursor-pointer focus:bg-zinc-800 focus:text-white"
+                className="text-sm p-2 text-stone-300 gap-2 cursor-pointer focus:bg-stone-800 focus:text-white"
               >
                 <Trash2 className="h-4 w-4" /> Delete Conversation
               </DropdownMenuItem>
               {conversation.type === "DIRECT" && otherUser && (
                 <>
-                  <DropdownMenuSeparator className="bg-zinc-800" />
+                  <DropdownMenuSeparator className="bg-stone-800" />
                   <DropdownMenuItem
                     onClick={async () => {
                       const res = await blockUser(otherUser.id);
@@ -462,37 +664,24 @@ export default function ConversationView({
         </div>
       </div>
 
-      {/* In-app Notification overlay */}
-      {showNotification && (
-        <div className="mx-4 mt-3 p-3 bg-zinc-900/90 border border-zinc-800/80 rounded-xl flex items-center justify-between shadow-xl backdrop-blur-md transition-all duration-300 animate-in fade-in slide-in-from-top-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="relative shrink-0">
-              <Avatar className="h-9 w-9">
-                <AvatarImage src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80" />
-                <AvatarFallback className="bg-indigo-650 text-white font-bold text-xs">AN</AvatarFallback>
-              </Avatar>
-              <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-[#121218]" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-semibold text-white">Aria Novak</span>
-              <span className="text-[11px] text-zinc-300">Sent you the design files 🎨</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] text-zinc-500 font-medium">now</span>
-            <button 
-              onClick={() => setShowNotification(false)}
-              className="text-zinc-500 hover:text-zinc-300 transition-colors p-1 rounded-md hover:bg-zinc-850 cursor-pointer"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Messages */}
-      <ScrollArea className="flex-1 bg-zinc-50/0 dark:bg-zinc-950/0">
-        <div className="p-4 space-y-4 max-w-4xl mx-auto flex flex-col justify-end min-h-full">
+      <ScrollArea viewportRef={scrollViewportRef} className="flex-1 min-h-0 bg-stone-50/0 dark:bg-stone-950/0">
+        <div className="p-4 space-y-2 max-w-4xl mx-auto flex flex-col justify-end min-h-full">
+          {hasMore && (
+            <div ref={topSentinelRef} className="py-2 flex justify-center items-center shrink-0">
+              {isLoadingMore ? (
+                <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
+              ) : (
+                <div className="h-5" />
+              )}
+            </div>
+          )}
+          {!hasMore && optimisticMessages.length > 0 && (
+            <div className="py-2 text-center text-xs text-stone-500 shrink-0">
+              Beginning of conversation
+            </div>
+          )}
+
           {optimisticMessages.length === 0 ? (
             <NoMessagesEmptyState name={displayName} />
           ) : (
@@ -507,45 +696,28 @@ export default function ConversationView({
                     <Link href={`/people/${m.senderUsername}`}>
                       <Avatar className="h-8 w-8 shrink-0 self-end mb-1 hover:opacity-85 transition-opacity">
                         <AvatarImage src={m.senderAvatar} />
-                        <AvatarFallback className="bg-zinc-800 text-[10px] text-zinc-350">
+                        <AvatarFallback className="bg-stone-800 text-[10px] text-stone-350">
                           {m.senderName.slice(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                     </Link>
                   )}
                   <div className="flex flex-col max-w-[72%]">
-                    {!isMe && (
+                    {!isMe && conversation.type === "GROUP" && (
                       <Link href={`/people/${m.senderUsername}`} className="hover:underline">
-                        <span className="text-[10px] font-medium text-zinc-500 ml-1.5 mb-0.5 block">
+                        <span className="text-[10px] font-medium text-stone-500 ml-1.5 mb-0.5 block">
                           {m.senderName}
                         </span>
                       </Link>
                     )}
-                    <div
-                      className={`
-                        px-4 py-2.5 rounded-2xl text-sm shadow-sm leading-relaxed
-                        ${
-                          isMe
-                            ? "bg-blue-600 text-white rounded-br-none"
-                            : "bg-zinc-800/80 text-white rounded-bl-none border border-zinc-800/40"
-                        }
-                      `}
-                    >
+                    <div className={`px-4 py-2.5 rounded-2xl text-sm shadow-sm leading-relaxed wrap-break-word whitespace-pre-wrap ${isMe ? "bg-blue-600 text-white rounded-br-none" : "bg-stone-800/80 text-white rounded-bl-none border border-stone-800/40"}`} >
                       {m.content}
                     </div>
-                    <span
-                      className={`text-[9px] text-zinc-500 mt-1 flex items-center gap-1 ${
-                        isMe ? "justify-end mr-1.5" : "ml-1.5"
-                      }`}
-                    >
-                      {m.time}
+                    <span className={`text-[9px] text-stone-500 mt-1 flex items-center gap-1 ${isMe ? "justify-end mr-1.5" : "ml-1.5"}`}> {m.time}
                       {isMe && (
-                        m.isPending ? (
-                          <Loader2 className="h-3 w-3 animate-spin text-blue-400/70" />
-                        ) : m.isSeen ? (
-                          <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
-                        ) : (
-                          <Check className="h-3.5 w-3.5 text-zinc-500" />
+                        m.isPending ? (<Loader2 className="h-3 w-3 animate-spin text-blue-400/70" />
+                        ) : m.isSeen ? (<CheckCheck className="h-3.5 w-3.5 text-blue-500" />
+                        ) : (<Check className="h-3.5 w-3.5 text-stone-500" />
                         )
                       )}
                     </span>
@@ -560,12 +732,12 @@ export default function ConversationView({
             <div className="flex gap-3 justify-start items-end animate-in fade-in slide-in-from-bottom-2">
               <Avatar className="h-8 w-8 shrink-0 mb-1">
                 <AvatarImage src={displayAvatar ?? ""} />
-                <AvatarFallback className="bg-zinc-850 text-[10px] text-zinc-350">
+                <AvatarFallback className="bg-stone-850 text-[10px] text-stone-350">
                   {displayName.slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col">
-                <div className="px-4 py-3 rounded-2xl bg-zinc-800/80 text-white rounded-bl-none flex items-center gap-1.5 shadow-sm border border-zinc-800/30">
+                <div className="px-4 py-3 rounded-2xl bg-stone-800/80 text-white rounded-bl-none flex items-center gap-1.5 shadow-sm border border-stone-800/30">
                   <span className="typing-dot animate-typing-1"></span>
                   <span className="typing-dot animate-typing-2"></span>
                   <span className="typing-dot animate-typing-3"></span>
@@ -573,26 +745,26 @@ export default function ConversationView({
               </div>
             </div>
           )}
-          
+
           <div ref={bottomRef} />
         </div>
       </ScrollArea>
 
       {/* Input Form Section */}
-      <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-850 bg-white dark:bg-[#070709] shrink-0">
+      <div className="px-4 py-3 border-t border-stone-200 dark:border-stone-850 bg-white dark:bg-[#070709] shrink-0">
         <form
           onSubmit={handleSend}
           className="max-w-4xl mx-auto flex items-center gap-3"
         >
           {/* Capsule input pill */}
-          <div className="flex-1 bg-zinc-150 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-full px-4 py-2.5 flex items-center gap-2.5">
-            <button 
-              type="button" 
-              className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white shrink-0 cursor-pointer transition-colors"
+          <div className="flex-1 bg-stone-150 dark:bg-stone-900/60 border border-stone-200 dark:border-stone-800 rounded-full px-4 py-2.5 flex items-center gap-2.5">
+            <button
+              type="button"
+              className="text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-white shrink-0 cursor-pointer transition-colors"
             >
               <Paperclip className="h-5 w-5" />
             </button>
-            
+
             <input
               placeholder="Type a message..."
               value={messageText}
@@ -604,12 +776,12 @@ export default function ConversationView({
                 }
               }}
               disabled={isPending}
-              className="flex-1 bg-transparent border-0 outline-none text-zinc-900 dark:text-white placeholder:text-zinc-500 text-sm focus:ring-0 focus:outline-none"
+              className="flex-1 bg-transparent border-0 outline-none text-stone-900 dark:text-white placeholder:text-stone-500 text-sm focus:ring-0 focus:outline-none"
             />
 
-            <button 
-              type="button" 
-              className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white shrink-0 cursor-pointer transition-colors"
+            <button
+              type="button"
+              className="text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-white shrink-0 cursor-pointer transition-colors"
             >
               <Smile className="h-5 w-5" />
             </button>

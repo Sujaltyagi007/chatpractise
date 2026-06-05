@@ -35,14 +35,14 @@ export default function ForgotPasswordPage() {
     );
 
     return (
-        <div className="bg-white p-8 shadow-sm ring-1 ring-zinc-900/5 sm:rounded-xl dark:bg-zinc-900 dark:ring-white/10">
+        <div className="bg-white p-8 shadow-sm ring-1 ring-stone-900/5 sm:rounded-xl dark:bg-stone-900 dark:ring-white/10">
             <div className="mb-6">
-                <h2 className="text-xl font-semibold text-zinc-900 dark:text-white">Reset your password</h2>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                <h2 className="text-xl font-semibold text-stone-900 dark:text-white">Reset your password</h2>
+                <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
                     Enter your email address and we'll send you a link to reset your password.
                 </p>
             </div>
-            
+
             {state.success ? (
                 <div className="space-y-4">
                     <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg p-4 flex flex-col items-center justify-center text-center space-y-2">
@@ -66,10 +66,10 @@ export default function ForgotPasswordPage() {
                         <label className="text-sm font-medium" htmlFor="email">Email</label>
                         <Input id="email" name="email" type="email" required placeholder="you@example.com" />
                     </div>
-                    
+
                     <SubmitButton />
-                    
-                    <p className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
+
+                    <p className="mt-4 text-center text-sm text-stone-600 dark:text-stone-400">
                         Remember your password?{" "}
                         <Link href="/sign-in" className="font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
                             Sign in

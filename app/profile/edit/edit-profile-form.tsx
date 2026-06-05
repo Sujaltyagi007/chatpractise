@@ -19,11 +19,11 @@ interface EditProfileFormProps {
 export default function EditProfileForm({ profile }: EditProfileFormProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const [previewUrl, setPreviewUrl] = useState<string | null>(profile.avatarUrl);
   const [fullName, setFullName] = useState(profile.fullName ?? "");
   const [bio, setBio] = useState(profile.bio ?? "");
-  
+
   const [username, setUsername] = useState(profile.username);
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
@@ -99,24 +99,24 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
     });
   };
 
-  const isSaveDisabled = 
-    isPending || 
-    isCheckingUsername || 
+  const isSaveDisabled =
+    isPending ||
+    isCheckingUsername ||
     usernameStatus === "invalid" ||
     (username !== profile.username && usernameStatus !== "valid" && !usernameError) ||
     !fullName.trim();
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col font-sans">
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex flex-col font-sans">
       {/* Navigation Header */}
-      <header className="sticky top-0 z-40 w-full border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md">
+      <header className="sticky top-0 z-40 w-full border-b border-stone-200 dark:border-stone-800 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md">
         <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               href="/profile"
               className={cn(
                 buttonVariants({ variant: "ghost", size: "sm" }),
-                "text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center gap-2",
+                "text-stone-500 hover:text-stone-900 dark:hover:text-white flex items-center gap-2",
                 isPending && "pointer-events-none opacity-50"
               )}
             >
@@ -124,7 +124,7 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
               <span>Cancel</span>
             </Link>
           </div>
-          <h1 className="font-semibold text-sm text-zinc-900 dark:text-white">
+          <h1 className="font-semibold text-sm text-stone-900 dark:text-white">
             Edit Profile
           </h1>
           <div className="w-24 flex justify-end">
@@ -150,8 +150,8 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
 
       {/* Main Container */}
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8">
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden p-6 sm:p-8">
-          
+        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-sm overflow-hidden p-6 sm:p-8">
+
           {error && (
             <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300 border border-red-100 dark:border-red-900/30 text-sm">
               <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
@@ -163,10 +163,10 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
           )}
 
           <form id="edit-profile-form" onSubmit={handleSubmit} className="space-y-6">
-            
+
             {/* Interactive Avatar Upload */}
-            <div className="flex flex-col items-center gap-3 pb-6 border-b border-zinc-100 dark:border-zinc-800">
-              <div 
+            <div className="flex flex-col items-center gap-3 pb-6 border-b border-stone-100 dark:border-stone-800">
+              <div
                 className="relative cursor-pointer group"
                 onClick={() => !isPending && fileInputRef.current?.click()}
                 aria-label="Upload avatar"
@@ -195,11 +195,11 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
                   size="sm"
                   disabled={isPending}
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 border-zinc-200 dark:border-zinc-800"
+                  className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 border-stone-200 dark:border-stone-800"
                 >
                   Change Avatar
                 </Button>
-                <p className="text-[11px] text-zinc-400 mt-1">
+                <p className="text-[11px] text-stone-400 mt-1">
                   JPG, PNG, or GIF up to 5MB
                 </p>
               </div>
@@ -216,7 +216,7 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
 
             {/* Display Name */}
             <div className="space-y-2">
-              <label htmlFor="fullName" className="text-sm font-semibold text-zinc-950 dark:text-zinc-200 flex items-center gap-1.5">
+              <label htmlFor="fullName" className="text-sm font-semibold text-stone-950 dark:text-stone-200 flex items-center gap-1.5">
                 Display Name <span className="text-red-500">*</span>
               </label>
               <Input
@@ -228,17 +228,17 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 disabled={isPending}
-                className="border-zinc-200 dark:border-zinc-800 bg-transparent text-sm focus-visible:ring-indigo-500 h-10"
+                className="border-stone-200 dark:border-stone-800 bg-transparent text-sm focus-visible:ring-indigo-500 h-10"
               />
             </div>
 
             {/* Username Input with Validation Feedback */}
             <div className="space-y-2">
-              <label htmlFor="username" className="text-sm font-semibold text-zinc-950 dark:text-zinc-200 flex items-center gap-1.5">
+              <label htmlFor="username" className="text-sm font-semibold text-stone-950 dark:text-stone-200 flex items-center gap-1.5">
                 Username <span className="text-red-500">*</span>
               </label>
               <div className="relative flex items-center">
-                <span className="absolute left-3 text-sm text-zinc-400 select-none">@</span>
+                <span className="absolute left-3 text-sm text-stone-400 select-none">@</span>
                 <Input
                   id="username"
                   name="username"
@@ -248,13 +248,13 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
                   value={username}
                   onChange={handleUsernameChange}
                   disabled={isPending}
-                  className="pl-8 pr-10 border-zinc-200 dark:border-zinc-800 bg-transparent text-sm focus-visible:ring-indigo-500 h-10"
+                  className="pl-8 pr-10 border-stone-200 dark:border-stone-800 bg-transparent text-sm focus-visible:ring-indigo-500 h-10"
                 />
-                
+
                 {/* Checking Indicators */}
                 <div className="absolute right-3 flex items-center pointer-events-none">
                   {isCheckingUsername && (
-                    <Loader2 className="h-4 w-4 text-zinc-400 animate-spin" />
+                    <Loader2 className="h-4 w-4 text-stone-400 animate-spin" />
                   )}
                   {usernameStatus === "valid" && !isCheckingUsername && (
                     <CheckCircle2 className="h-4 w-4 text-green-500" />
@@ -275,7 +275,7 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
                   Username is available!
                 </p>
               ) : (
-                <p className="text-xs text-zinc-400">
+                <p className="text-xs text-stone-400">
                   Only lowercase letters and numbers, 3 to 20 characters long.
                 </p>
               )}
@@ -284,10 +284,10 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
             {/* Bio with character countdown */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label htmlFor="bio" className="text-sm font-semibold text-zinc-950 dark:text-zinc-200">
+                <label htmlFor="bio" className="text-sm font-semibold text-stone-950 dark:text-stone-200">
                   Bio
                 </label>
-                <span className={`text-xs ${bio.length > 190 ? "text-red-500 font-medium" : "text-zinc-400"}`}>
+                <span className={`text-xs ${bio.length > 190 ? "text-red-500 font-medium" : "text-stone-400"}`}>
                   {bio.length} / 200
                 </span>
               </div>
@@ -300,11 +300,11 @@ export default function EditProfileForm({ profile }: EditProfileFormProps) {
                 disabled={isPending}
                 rows={4}
                 maxLength={200}
-                className="border-zinc-200 dark:border-zinc-800 bg-transparent text-sm focus-visible:ring-indigo-500 resize-none py-2"
+                className="border-stone-200 dark:border-stone-800 bg-transparent text-sm focus-visible:ring-indigo-500 resize-none py-2"
               />
             </div>
-            
-            <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-3">
+
+            <div className="pt-4 border-t border-stone-100 dark:border-stone-800 flex justify-end gap-3">
               <Link
                 href="/profile"
                 className={cn(

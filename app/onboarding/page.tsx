@@ -73,22 +73,22 @@ export default async function OnboardingPage() {
                     <h1 className="text-5xl font-extrabold tracking-tight text-white leading-tight">
                         Let's set up your profile.
                     </h1>
-                    <p className="text-zinc-400 text-lg">
+                    <p className="text-stone-400 text-lg">
                         Fill in your display name, bio, and upload a photo to start chatting.
                     </p>
                 </div>
 
                 {/* Bottom Badges */}
                 <div className="flex flex-wrap gap-3">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-900/60 border border-zinc-800 text-zinc-300 backdrop-blur-sm">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-stone-900/60 border border-stone-800 text-stone-300 backdrop-blur-sm">
                         <Shield className="h-3.5 w-3.5 text-blue-500" />
                         End-to-end encrypted
                     </span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-900/60 border border-zinc-800 text-zinc-300 backdrop-blur-sm">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-stone-900/60 border border-stone-800 text-stone-300 backdrop-blur-sm">
                         <Zap className="h-3.5 w-3.5 text-yellow-500" />
                         Real-time messaging
                     </span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-900/60 border border-zinc-800 text-zinc-300 backdrop-blur-sm">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-stone-900/60 border border-stone-800 text-stone-300 backdrop-blur-sm">
                         <Globe className="h-3.5 w-3.5 text-emerald-500" />
                         Cross-platform
                     </span>
@@ -107,7 +107,7 @@ export default async function OnboardingPage() {
                     </div>
                     <div className="space-y-1">
                         <h2 className="text-3xl font-bold tracking-tight">Welcome</h2>
-                        <p className="text-zinc-400 text-sm">Let's finish setting up your profile</p>
+                        <p className="text-stone-400 text-sm">Let's finish setting up your profile</p>
                     </div>
                 </div>
 
@@ -117,7 +117,7 @@ export default async function OnboardingPage() {
                         {/* Desktop card title (hidden on mobile) */}
                         <div className="hidden lg:block space-y-0.5">
                             <h2 className="text-2xl font-bold text-white">Welcome!</h2>
-                            <p className="text-xs text-zinc-400">Let's finish setting up your profile.</p>
+                            <p className="text-xs text-stone-400">Let's finish setting up your profile.</p>
                         </div>
 
                         <OnboardingForm username={profile.username} email={profile.email} />
@@ -126,15 +126,15 @@ export default async function OnboardingPage() {
 
                 {/* Mobile Badges (visible under the card on mobile only) */}
                 <div className="flex lg:hidden text-nowrap gap-2 mt-8 items-center">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[7px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-400">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[7px] font-medium bg-stone-900 border border-stone-800 text-stone-400">
                         <Shield className="h-3 w-3 text-blue-500" />
                         End-to-end encrypted
                     </span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[7px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-400">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[7px] font-medium bg-stone-900 border border-stone-800 text-stone-400">
                         <Zap className="h-3 w-3 text-yellow-500" />
                         Real-time messaging
                     </span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[6px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-400">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[6px] font-medium bg-stone-900 border border-stone-800 text-stone-400">
                         <Globe className="h-3 w-3 text-emerald-500" />
                         Cross-platform
                     </span>

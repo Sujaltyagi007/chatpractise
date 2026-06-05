@@ -85,27 +85,27 @@ export default function NewConversationDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 p-0 gap-0 overflow-hidden">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-zinc-100 dark:border-zinc-800">
-          <DialogTitle className="text-base font-semibold text-zinc-950 dark:text-white flex items-center gap-2">
+      <DialogContent className="sm:max-w-md bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 p-0 gap-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-stone-100 dark:border-stone-800">
+          <DialogTitle className="text-base font-semibold text-stone-950 dark:text-white flex items-center gap-2">
             <MessageSquarePlus className="h-5 w-5 text-indigo-600" />
             New Direct Message
           </DialogTitle>
         </DialogHeader>
 
         {/* Search Input */}
-        <div className="px-6 py-3 border-b border-zinc-100 dark:border-zinc-800">
+        <div className="px-6 py-3 border-b border-stone-100 dark:border-stone-800">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400 pointer-events-none" />
             <Input
               autoFocus
               placeholder="Search by name or username..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="pl-9 pr-4 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-700 focus-visible:ring-indigo-500"
+              className="pl-9 pr-4 bg-stone-50 dark:bg-stone-950 border-stone-200 dark:border-stone-700 focus-visible:ring-indigo-500"
             />
             {searching && (
-              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 animate-spin" />
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400 animate-spin" />
             )}
           </div>
           {error && (
@@ -117,8 +117,8 @@ export default function NewConversationDialog({
         <div className="max-h-80 overflow-y-auto">
           {/* Idle — no query */}
           {!query.trim() && !searching && (
-            <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
-              <Search className="h-8 w-8 text-zinc-300 mb-2" />
+            <div className="flex flex-col items-center justify-center py-12 text-stone-400">
+              <Search className="h-8 w-8 text-stone-300 mb-2" />
               <p className="text-sm font-medium">Search for people</p>
               <p className="text-xs mt-0.5">Type a name or username to get started</p>
             </div>
@@ -129,10 +129,10 @@ export default function NewConversationDialog({
             <div className="px-3 py-2 space-y-1">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="flex items-center gap-3 p-3 rounded-lg">
-                  <div className="h-10 w-10 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse shrink-0" />
+                  <div className="h-10 w-10 rounded-full bg-stone-100 dark:bg-stone-800 animate-pulse shrink-0" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-3.5 bg-zinc-100 dark:bg-zinc-800 rounded animate-pulse w-32" />
-                    <div className="h-3 bg-zinc-100 dark:bg-zinc-800 rounded animate-pulse w-20" />
+                    <div className="h-3.5 bg-stone-100 dark:bg-stone-800 rounded animate-pulse w-32" />
+                    <div className="h-3 bg-stone-100 dark:bg-stone-800 rounded animate-pulse w-20" />
                   </div>
                 </div>
               ))}
@@ -141,8 +141,8 @@ export default function NewConversationDialog({
 
           {/* Empty results */}
           {!searching && query.trim() && results.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-zinc-400">
-              <UserX className="h-8 w-8 text-zinc-300 mb-2" />
+            <div className="flex flex-col items-center justify-center py-12 text-stone-400">
+              <UserX className="h-8 w-8 text-stone-300 mb-2" />
               <p className="text-sm font-medium">No users found</p>
               <p className="text-xs mt-0.5">Try a different name or username</p>
             </div>
@@ -158,7 +158,7 @@ export default function NewConversationDialog({
                     key={user.id}
                     onClick={() => handleSelectUser(user)}
                     disabled={creating !== null}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-150 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    className="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-150 hover:bg-stone-50 dark:hover:bg-stone-800/60 disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     <div className="relative shrink-0">
                       <Avatar className="h-10 w-10">
@@ -168,14 +168,14 @@ export default function NewConversationDialog({
                         </AvatarFallback>
                       </Avatar>
                       {user.isOnline && (
-                        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-white dark:ring-zinc-900" />
+                        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-white dark:ring-stone-900" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
+                      <p className="text-sm font-semibold text-stone-900 dark:text-white truncate">
                         {user.fullName ?? user.username}
                       </p>
-                      <p className="text-xs text-zinc-500 truncate">@{user.username}</p>
+                      <p className="text-xs text-stone-500 truncate">@{user.username}</p>
                     </div>
                     {isCreating && (
                       <Loader2 className="h-4 w-4 text-indigo-500 animate-spin shrink-0" />
@@ -187,12 +187,12 @@ export default function NewConversationDialog({
           )}
         </div>
 
-        <div className="px-6 py-3 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20">
+        <div className="px-6 py-3 border-t border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-950/20">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => onOpenChange(false)}
-            className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 text-xs"
+            className="text-stone-500 hover:text-stone-700 dark:hover:text-stone-300 text-xs"
           >
             Cancel
           </Button>

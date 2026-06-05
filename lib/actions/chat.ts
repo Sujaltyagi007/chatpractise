@@ -2,8 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { revalidatePath } from "next/cache";
-import type { ProfileSummary, ConversationSummary, MessageDTO } from "@/lib/types/chat";
+import type { ProfileSummary, ConversationSummary, CurrentUser, MessageDTO } from "@/lib/types/chat";
 
 export async function searchUsers(
   query: string
@@ -99,6 +98,33 @@ export async function getOrCreateDirectConversation(
   return { conversationId: conversation.id };
 }
 
+const conversationInclude = {
+  members: {
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          fullName: true,
+          avatarUrl: true,
+          bio: true,
+          isOnline: true,
+          lastSeen: true,
+        },
+      },
+    },
+  },
+  messages: {
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+    select: {
+      content: true,
+      createdAt: true,
+      sender: { select: { fullName: true, username: true } },
+    },
+  },
+} as const;
+
 export async function getUserConversations(): Promise<{
   conversations: ConversationSummary[];
   error?: string;
@@ -115,32 +141,7 @@ export async function getUserConversations(): Promise<{
       isArchived: false,
       members: { some: { userId: user.id, isHidden: false } },
     },
-    include: {
-      members: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              fullName: true,
-              avatarUrl: true,
-              bio: true,
-              isOnline: true,
-              lastSeen: true,
-            },
-          },
-        },
-      },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: {
-          content: true,
-          createdAt: true,
-          sender: { select: { fullName: true, username: true } },
-        },
-      },
-    },
+    include: conversationInclude,
     orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
   });
 
@@ -169,6 +170,7 @@ export async function getUserConversations(): Promise<{
 
 export async function getConversationById(conversationId: string): Promise<{
   conversation?: ConversationSummary;
+  profile?: CurrentUser;
   error?: string;
 }> {
   const supabase = await createClient();
@@ -178,40 +180,23 @@ export async function getConversationById(conversationId: string): Promise<{
 
   if (!user) return { error: "Not authenticated" };
 
-  const row = await prisma.conversation.findFirst({
-    where: {
-      id: conversationId,
-      members: { some: { userId: user.id } },
-    },
-    include: {
-      members: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              fullName: true,
-              avatarUrl: true,
-              bio: true,
-              isOnline: true,
-              lastSeen: true,
-            },
-          },
-        },
+  // Run conversation fetch and profile fetch in parallel — one auth round-trip
+  const [row, profileRow] = await Promise.all([
+    prisma.conversation.findFirst({
+      where: {
+        id: conversationId,
+        members: { some: { userId: user.id } },
       },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: {
-          content: true,
-          createdAt: true,
-          sender: { select: { fullName: true, username: true } },
-        },
-      },
-    },
-  });
+      include: conversationInclude,
+    }),
+    prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { id: true, email: true, username: true, fullName: true, avatarUrl: true, bio: true },
+    }),
+  ]);
 
   if (!row) return { error: "Conversation not found" };
+  if (!profileRow) return { error: "Not authenticated" };
 
   return {
     conversation: {
@@ -233,27 +218,32 @@ export async function getConversationById(conversationId: string): Promise<{
           }
         : null,
     },
+    profile: profileRow,
   };
 }
 
 export async function getMessages(
-  conversationId: string
-): Promise<{ messages: MessageDTO[]; error?: string }> {
+  conversationId: string,
+  cursor?: string,
+  limit = 50
+): Promise<{ messages: MessageDTO[]; hasMore: boolean; nextCursor?: string; error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) return { messages: [], error: "Not authenticated" };
+  if (!user) return { messages: [], hasMore: false, error: "Not authenticated" };
 
-  // Verify membership
-  const member = await prisma.conversationMember.findUnique({
-    where: { conversationId_userId: { conversationId, userId: user.id } },
-  });
-
-  if (!member) return { messages: [], error: "Not a member of this conversation" };
-
+  // Single query: membership verified via relation filter + native cursor pagination
   const messages = await prisma.message.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: "asc" },
+    where: {
+      conversationId,
+      conversation: { members: { some: { userId: user.id } } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit + 1,
+    ...(cursor && {
+      cursor: { id: cursor },
+      skip: 1,
+    }),
     select: {
       id: true,
       conversationId: true,
@@ -275,7 +265,20 @@ export async function getMessages(
     },
   });
 
-  return { messages };
+  // If 0 results and cursor is absent, user may not be a member — fail gracefully
+  if (messages.length === 0 && !cursor) {
+    const isMember = await prisma.conversationMember.findUnique({
+      where: { conversationId_userId: { conversationId, userId: user.id } },
+    });
+    if (!isMember) return { messages: [], hasMore: false, error: "Not a member of this conversation" };
+  }
+
+  const hasMore = messages.length > limit;
+  if (hasMore) messages.pop();
+  messages.reverse();
+
+  const nextCursor = messages.length > 0 ? messages[0].id : undefined;
+  return { messages, hasMore, nextCursor };
 }
 
 export async function sendMessage(
@@ -290,18 +293,17 @@ export async function sendMessage(
   const trimmedContent = content.trim();
   if (!trimmedContent) return { error: "Message cannot be empty" };
 
-  const member = await prisma.conversationMember.findUnique({
-    where: { conversationId_userId: { conversationId, userId: user.id } },
-  });
-
-  if (!member) return { error: "Not a member of this conversation" };
-
-  // Check if any party has blocked the other
-  const conversationMembers = await prisma.conversationMember.findMany({
+  // Single query: get all members (replaces separate membership + members list queries)
+  const members = await prisma.conversationMember.findMany({
     where: { conversationId },
     select: { userId: true },
   });
-  const otherUserIds = conversationMembers.map((m) => m.userId).filter((id) => id !== user.id);
+
+  const isMember = members.some((m) => m.userId === user.id);
+  if (!isMember) return { error: "Not a member of this conversation" };
+
+  // Block check with all other members
+  const otherUserIds = members.map((m) => m.userId).filter((id) => id !== user.id);
   if (otherUserIds.length > 0) {
     const block = await prisma.block.findFirst({
       where: {
@@ -314,36 +316,35 @@ export async function sendMessage(
     if (block) return { error: "Cannot send message: user is blocked" };
   }
 
-  const message = await prisma.message.create({
-    data: {
-      conversationId,
-      senderId: user.id,
-      content: trimmedContent,
-      type: "TEXT",
-    },
-    select: {
-      id: true,
-      conversationId: true,
-      senderId: true,
-      content: true,
-      createdAt: true,
-      sender: {
-        select: {
-          fullName: true,
-          username: true,
-          avatarUrl: true,
+  // Transaction: create message + update lastMessageAt atomically
+  const [message] = await prisma.$transaction([
+    prisma.message.create({
+      data: {
+        conversationId,
+        senderId: user.id,
+        content: trimmedContent,
+        type: "TEXT",
+      },
+      select: {
+        id: true,
+        conversationId: true,
+        senderId: true,
+        content: true,
+        createdAt: true,
+        sender: {
+          select: {
+            fullName: true,
+            username: true,
+            avatarUrl: true,
+          },
         },
       },
-    },
-  });
-
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: { lastMessageAt: new Date() },
-  });
-
-  revalidatePath(`/chat/${conversationId}`);
-  revalidatePath(`/chat`);
+    }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date() },
+    }),
+  ]);
 
   return { message };
 }

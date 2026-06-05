@@ -91,25 +91,24 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
   const isSelf = targetUser.id === currentUserId;
 
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden">
-      
+    <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-sm overflow-hidden">
+
       {/* Cover decoration */}
       <div className="h-32 w-full bg-linear-to-r from-violet-500 to-indigo-600"></div>
 
       {/* Avatar wrapper */}
-      <div className="relative px-6 pb-6 border-b border-zinc-100 dark:border-zinc-800">
+      <div className="relative px-6 pb-6 border-b border-stone-100 dark:border-stone-800">
         <div className="absolute -top-16 left-6">
           <div className="relative">
-            <Avatar className="h-28 w-28 ring-4 ring-white dark:ring-zinc-900 shadow-md">
+            <Avatar className="h-28 w-28 ring-4 ring-white dark:ring-stone-900 shadow-md">
               <AvatarImage src={targetUser.avatarUrl ?? ""} />
               <AvatarFallback className="bg-indigo-600 text-white text-3xl font-bold">
                 {(targetUser.fullName ?? targetUser.username).slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
             {/* Status dot on avatar */}
-            <span className={`absolute bottom-1 right-1 h-5 w-5 rounded-full ring-4 ring-white dark:ring-zinc-900 flex items-center justify-center ${
-              isOnline ? "bg-green-500" : "bg-zinc-400"
-            }`}>
+            <span className={`absolute bottom-1 right-1 h-5 w-5 rounded-full ring-4 ring-white dark:ring-stone-900 flex items-center justify-center ${isOnline ? "bg-green-500" : "bg-stone-400"
+              }`}>
               {isOnline && (
                 <span className="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75 animate-ping" />
               )}
@@ -120,16 +119,16 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
         <div className="pt-16 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
+              <h1 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-white">
                 {targetUser.fullName ?? targetUser.username}
               </h1>
               {isSelf && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border border-stone-200 dark:border-stone-700">
                   You
                 </span>
               )}
             </div>
-            <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+            <p className="text-sm font-medium text-stone-500 dark:text-stone-400">
               @{targetUser.username}
             </p>
           </div>
@@ -140,7 +139,7 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
                 href="/profile"
                 className={cn(
                   buttonVariants({ variant: "outline" }),
-                  "border-zinc-200 dark:border-zinc-800 gap-2 text-sm flex items-center"
+                  "border-stone-200 dark:border-stone-800 gap-2 text-sm flex items-center"
                 )}
               >
                 <User className="h-4 w-4" />
@@ -187,7 +186,7 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
 
       {/* Profile Body */}
       <div className="p-6 space-y-6">
-        
+
         {error && (
           <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-950/20 text-red-800 dark:text-red-300 border border-red-100 dark:border-red-900/30 text-sm">
             <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
@@ -196,15 +195,14 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
         )}
 
         {/* Presence Status Banner */}
-        <div className="flex items-center gap-3 bg-zinc-50 dark:bg-zinc-950/30 border border-zinc-200/50 dark:border-zinc-800/50 rounded-xl p-4 text-sm">
-          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-            isOnline ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-zinc-400"
-          }`} />
+        <div className="flex items-center gap-3 bg-stone-50 dark:bg-stone-950/30 border border-stone-200/50 dark:border-stone-800/50 rounded-xl p-4 text-sm">
+          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${isOnline ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-stone-400"
+            }`} />
           <div className="flex flex-col">
-            <span className="font-semibold text-zinc-900 dark:text-white capitalize">
+            <span className="font-semibold text-stone-900 dark:text-white capitalize">
               {isOnline ? "Active Now" : "Offline"}
             </span>
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-stone-500">
               {isOnline ? "Currently online and tracking active connections." : statusText}
             </span>
           </div>
@@ -212,27 +210,27 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
 
         {/* Bio */}
         <div className="space-y-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-stone-400 dark:text-stone-500">
             About
           </h2>
           {targetUser.bio ? (
-            <p className="text-zinc-700 dark:text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">
+            <p className="text-stone-700 dark:text-stone-300 text-sm leading-relaxed whitespace-pre-wrap">
               {targetUser.bio}
             </p>
           ) : (
-            <p className="text-zinc-400 dark:text-zinc-600 text-sm italic">
+            <p className="text-stone-400 dark:text-stone-600 text-sm italic">
               This user hasn&apos;t written a bio yet.
             </p>
           )}
         </div>
 
         {/* Info */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-100 dark:border-zinc-800 text-sm">
-          <div className="flex items-center gap-3 text-zinc-600 dark:text-zinc-400">
-            <Calendar className="h-4.5 w-4.5 text-zinc-400 shrink-0" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-stone-100 dark:border-stone-800 text-sm">
+          <div className="flex items-center gap-3 text-stone-600 dark:text-stone-400">
+            <Calendar className="h-4.5 w-4.5 text-stone-400 shrink-0" />
             <div>
-              <p className="text-xs text-zinc-400">Member Since</p>
-              <p className="font-medium text-zinc-800 dark:text-zinc-200">
+              <p className="text-xs text-stone-400">Member Since</p>
+              <p className="font-medium text-stone-800 dark:text-stone-200">
                 {joinDate}
               </p>
             </div>

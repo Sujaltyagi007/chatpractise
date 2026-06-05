@@ -30,21 +30,21 @@ export default function ResetPasswordPage() {
     );
 
     return (
-        <div className="bg-white p-8 shadow-sm ring-1 ring-zinc-900/5 sm:rounded-xl dark:bg-zinc-900 dark:ring-white/10">
+        <div className="bg-white p-8 shadow-sm ring-1 ring-stone-900/5 sm:rounded-xl dark:bg-stone-900 dark:ring-white/10">
             <div className="mb-6">
-                <h2 className="text-xl font-semibold text-zinc-900 dark:text-white">Set new password</h2>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                <h2 className="text-xl font-semibold text-stone-900 dark:text-white">Set new password</h2>
+                <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
                     Please enter your new password below.
                 </p>
             </div>
-            
+
             <form action={formAction} className="space-y-4">
                 {state.error && (
                     <div className="text-sm font-medium text-red-500 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg border border-red-200 dark:border-red-900">
                         {state.error}
                     </div>
                 )}
-                
+
                 <div className="space-y-1">
                     <label className="text-sm font-medium" htmlFor="password">New Password</label>
                     <Input id="password" name="password" type="password" required minLength={8} placeholder="At least 8 characters" />
@@ -54,7 +54,7 @@ export default function ResetPasswordPage() {
                     <label className="text-sm font-medium" htmlFor="confirmPassword">Confirm Password</label>
                     <Input id="confirmPassword" name="confirmPassword" type="password" required minLength={8} />
                 </div>
-                
+
                 <SubmitButton />
             </form>
         </div>

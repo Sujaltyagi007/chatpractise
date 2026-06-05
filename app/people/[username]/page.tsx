@@ -31,16 +31,16 @@ export default async function PublicProfilePage({ params }: Props) {
 
   return (
     <PresenceProvider currentUserId={currentUser.id}>
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col font-sans">
+      <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex flex-col font-sans">
         {/* Navigation Header */}
-        <header className="sticky top-0 z-40 w-full border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md">
+        <header className="sticky top-0 z-40 w-full border-b border-stone-200 dark:border-stone-800 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md">
           <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Link
                 href="/chat"
                 className={cn(
                   buttonVariants({ variant: "ghost", size: "sm" }),
-                  "text-zinc-500 hover:text-zinc-900 dark:hover:text-white flex items-center gap-2"
+                  "text-stone-500 hover:text-stone-900 dark:hover:text-white flex items-center gap-2"
                 )}
               >
                 <ArrowLeft className="h-4 w-4" />

@@ -74,14 +74,8 @@ export async function signUp(formData: FormData) {
             },
         });
         
-        // Trigger background cleanup of unconfirmed accounts
-        cleanupUnconfirmedUsers().catch(console.error);
-
         redirect("/sign-in?message=Account+created!+Please+check+your+email+to+confirm+your+account.");
     }
-
-    // Trigger background cleanup of unconfirmed accounts
-    cleanupUnconfirmedUsers().catch(console.error);
 
     redirect("/onboarding");
 }
@@ -95,9 +89,6 @@ export async function signIn(formData: FormData) {
         email,
         password,
     });
-
-    // Trigger background cleanup of unconfirmed accounts
-    cleanupUnconfirmedUsers().catch(console.error);
 
     if (error) {
         return { error: error.message };
