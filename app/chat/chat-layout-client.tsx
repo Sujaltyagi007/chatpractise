@@ -99,7 +99,7 @@ export default function ChatLayoutClient({ profile, conversations: initialConver
                 <Menu className="h-5 w-5" />
               </Button>
               <div className="flex items-center gap-2 text-indigo-600 dark:text-blue-500 font-semibold text-sm">
-                <MessageSquare className="h-5 w-5" />
+                <img src="/icon.svg" alt="ChatFlow Logo" className="h-5 w-5 object-contain" />
                 <span>ChatFlow</span>
               </div>
             </div>

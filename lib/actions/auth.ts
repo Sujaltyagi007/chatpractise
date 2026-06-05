@@ -135,6 +135,29 @@ export async function signIn(formData: FormData) {
     redirect("/chat");
 }
 
+export async function signInWithOAuth(provider: 'google' | 'github') {
+    const supabase = await createClient();
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    const origin = h.get("origin") ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+            redirectTo: `${origin}/auth/callback?next=/chat`,
+        },
+    });
+
+    if (error) {
+        console.error("OAuth error:", error.message);
+        redirect("/sign-in?message=Authentication%20failed");
+    }
+
+    if (data.url) {
+        redirect(data.url);
+    }
+}
+
 export async function checkOnboarding() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();

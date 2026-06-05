@@ -62,8 +62,8 @@ export default async function OnboardingPage() {
             <div className="hidden lg:flex lg:w-1/2 bg-auth-gradient flex-col justify-between p-12 relative overflow-hidden h-full">
                 {/* Brand Logo */}
                 <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                        <MessageSquare className="h-5 w-5 text-white fill-white/10" />
+                    <div className="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30 overflow-hidden">
+                        <img src="/icon.svg" alt="ChatFlow Logo" className="h-6 w-6 object-contain" />
                     </div>
                     <span className="font-bold text-xl tracking-tight text-white">ChatFlow</span>
                 </div>
@@ -100,8 +100,8 @@ export default async function OnboardingPage() {
                 {/* Mobile Header (hidden on desktop) */}
                 <div className="flex lg:hidden flex-col items-center mb-6 text-center space-y-3">
                     <div className="flex items-center gap-2.5">
-                        <div className="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                            <MessageSquare className="h-5 w-5 text-white fill-white/10" />
+                        <div className="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 overflow-hidden">
+                            <img src="/icon.svg" alt="ChatFlow Logo" className="h-6 w-6 object-contain" />
                         </div>
                         <span className="font-bold text-xl tracking-tight">ChatFlow</span>
                     </div>
