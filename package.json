@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "postinstall": "prisma generate",
+    "db:migrate:prod": "prisma migrate deploy",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
