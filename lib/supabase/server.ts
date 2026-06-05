@@ -8,8 +8,18 @@ export async function createClient() {
         process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
         {
             cookies: {
-                getAll: () => cookieStore.getAll(),
-                setAll: (cookiesToSet: any) => cookiesToSet.forEach(({ name, value, options }: any) => cookieStore.set(name, value, options))
+                getAll() {
+                    return cookieStore.getAll();
+                },
+                setAll(cookiesToSet: any) {
+                    try {
+                        cookiesToSet.forEach(({ name, value, options }: any) => 
+                            cookieStore.set(name, value, options)
+                        );
+                    } catch {
+                        
+                    }
+                }
             },
         }
     );
