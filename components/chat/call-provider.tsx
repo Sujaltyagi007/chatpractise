@@ -374,18 +374,9 @@ export function CallProvider({
 
           // Receive remote video/audio track robustly
           pc.ontrack = (event) => {
-            setRemoteStream((prevStream) => {
-              if (prevStream) {
-                // If stream exists, create a fresh one with all tracks to force React to update the ref
-                const tracks = prevStream.getTracks();
-                if (!tracks.includes(event.track)) {
-                  return new MediaStream([...tracks, event.track]);
-                }
-                return prevStream;
-              }
-              // Initialize with the first received track
-              return new MediaStream([event.track]);
-            });
+            if (event.streams && event.streams[0]) {
+              setRemoteStream(event.streams[0]);
+            }
           };
 
           // Generate SDP offer and broadcast to partner
@@ -497,6 +488,14 @@ export function CallProvider({
             pc.addTrack(track, stream);
           });
 
+          // Log ICE state to debug local connection issues
+          pc.oniceconnectionstatechange = () => {
+            console.log("Callee ICE State:", pc.iceConnectionState);
+            if (pc.iceConnectionState === "failed") {
+              toast.error("WebRTC Connection Failed (Firewall/NAT issue)");
+            }
+          };
+
           // Transmit ICE candidates
           pc.onicecandidate = (event) => {
             if (event.candidate) {
@@ -514,18 +513,9 @@ export function CallProvider({
 
           // Receive remote video/audio track robustly
           pc.ontrack = (event) => {
-            setRemoteStream((prevStream) => {
-              if (prevStream) {
-                // If stream exists, create a fresh one with all tracks to force React to update the ref
-                const tracks = prevStream.getTracks();
-                if (!tracks.includes(event.track)) {
-                  return new MediaStream([...tracks, event.track]);
-                }
-                return prevStream;
-              }
-              // Initialize with the first received track
-              return new MediaStream([event.track]);
-            });
+            if (event.streams && event.streams[0]) {
+              setRemoteStream(event.streams[0]);
+            }
           };
 
           // Apply received SDP Offer description

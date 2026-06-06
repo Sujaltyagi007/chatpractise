@@ -27,25 +27,45 @@ export interface CallContextType {
   isCamOff: boolean;
 }
 
-// Configuration with Google STUN + OpenRelay Free TURN servers for reliable media transfer
+// Configuration with Google STUN + OpenRelay/Custom TURN servers for reliable media transfer
+const customIceServers: RTCIceServer[] = [];
+
+if (
+  typeof process !== "undefined" &&
+  process.env.NEXT_PUBLIC_TURN_URL &&
+  process.env.NEXT_PUBLIC_TURN_USERNAME &&
+  process.env.NEXT_PUBLIC_TURN_CREDENTIAL
+) {
+  const urls = process.env.NEXT_PUBLIC_TURN_URL.split(",").map((url) => url.trim());
+  customIceServers.push({
+    urls,
+    username: process.env.NEXT_PUBLIC_TURN_USERNAME,
+    credential: process.env.NEXT_PUBLIC_TURN_CREDENTIAL,
+  });
+}
+
 export const iceConfiguration: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443?transport=tcp",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
+    ...(customIceServers.length > 0
+      ? customIceServers
+      : [
+          {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+          },
+          {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+          },
+          {
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject",
+          },
+        ]),
   ],
 };
