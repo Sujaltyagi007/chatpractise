@@ -44,28 +44,39 @@ if (
   });
 }
 
+export const baseIceServers: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+];
+
 export const iceConfiguration: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    ...(customIceServers.length > 0
-      ? customIceServers
-      : [
-          {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443?transport=tcp",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-        ]),
-  ],
+  iceServers: baseIceServers,
 };
+
+// Fetch dynamic TURN credentials from Metered.ca API
+export async function fetchDynamicIceServers(): Promise<RTCConfiguration> {
+  const stunServers = baseIceServers;
+
+  try {
+    const apiKey = process.env.NEXT_PUBLIC_METERED_API_KEY;
+    if (!apiKey) {
+      console.warn("NEXT_PUBLIC_METERED_API_KEY not configured, using STUN only");
+      return { iceServers: stunServers };
+    }
+
+    const response = await fetch(
+      `https://chatpractise.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`,
+      { signal: AbortSignal.timeout(5000) } // 5 second timeout
+    );
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const turnServers: RTCIceServer[] = await response.json();
+    return {
+      iceServers: [...stunServers, ...turnServers],
+    };
+  } catch (err) {
+    console.warn("Failed to fetch TURN credentials, using STUN only:", err);
+    return { iceServers: stunServers };
+  }
+}

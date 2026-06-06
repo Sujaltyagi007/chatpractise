@@ -2,6 +2,7 @@ export class CallSounds {
   private ctx: AudioContext | null = null;
   private ringbackInterval: any = null;
   private ringtoneInterval: any = null;
+  private activeNodes: AudioScheduledSourceNode[] = [];
 
   initCtx() {
     if (!this.ctx) {
@@ -28,7 +29,7 @@ export class CallSounds {
       osc2.frequency.value = 480;
 
       gain.gain.setValueAtTime(0, this.ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.35, this.ctx.currentTime + 0.1); // Boosted from 0.08
+      gain.gain.linearRampToValueAtTime(0.35, this.ctx.currentTime + 0.1);
       gain.gain.setValueAtTime(0.35, this.ctx.currentTime + 1.8);
       gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 2.0);
 
@@ -40,6 +41,7 @@ export class CallSounds {
       osc2.start();
       osc1.stop(this.ctx.currentTime + 2.0);
       osc2.stop(this.ctx.currentTime + 2.0);
+      this.activeNodes.push(osc1, osc2);
     };
 
     playTone();
@@ -63,7 +65,7 @@ export class CallSounds {
         osc.type = "sine";
         osc.frequency.value = freq;
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.45, time + 0.05); // Boosted from 0.12
+        gain.gain.linearRampToValueAtTime(0.45, time + 0.05);
         gain.gain.setValueAtTime(0.45, time + 0.25);
         gain.gain.linearRampToValueAtTime(0, time + 0.3);
 
@@ -71,6 +73,7 @@ export class CallSounds {
         gain.connect(this.ctx.destination);
         osc.start(time);
         osc.stop(time + 0.3);
+        this.activeNodes.push(osc);
       };
 
       playBeep(now, 850);
@@ -94,7 +97,7 @@ export class CallSounds {
     osc.frequency.setValueAtTime(320, now);
     osc.frequency.exponentialRampToValueAtTime(80, now + 0.35);
 
-    gain.gain.setValueAtTime(0.4, now); // Boosted from 0.15
+    gain.gain.setValueAtTime(0.4, now);
     gain.gain.linearRampToValueAtTime(0, now + 0.35);
 
     osc.connect(gain);
@@ -102,6 +105,7 @@ export class CallSounds {
 
     osc.start();
     osc.stop(now + 0.35);
+    this.activeNodes.push(osc);
   }
 
   stop() {
@@ -112,6 +116,22 @@ export class CallSounds {
     if (this.ringtoneInterval) {
       clearInterval(this.ringtoneInterval);
       this.ringtoneInterval = null;
+    }
+    // Stop all scheduled oscillators immediately instead of waiting for their timed stop
+    this.activeNodes.forEach((node) => {
+      try {
+        node.stop();
+      } catch {}
+    });
+    this.activeNodes = [];
+  }
+
+  // Call on component unmount to release the AudioContext resource
+  destroy() {
+    this.stop();
+    if (this.ctx) {
+      this.ctx.close();
+      this.ctx = null;
     }
   }
 }

@@ -6,7 +6,7 @@ import { sendMessage } from "@/lib/actions/chat";
 import { toast } from "sonner";
 import { TOAST } from "@/lib/utils";
 import { CallSounds } from "./call-sounds";
-import { CallState, CallContextType, iceConfiguration } from "./call-types";
+import { CallState, CallContextType, fetchDynamicIceServers } from "./call-types";
 import { CallOverlay } from "./call-overlay";
 
 const CallContext = createContext<CallContextType | undefined>(undefined);
@@ -45,6 +45,8 @@ export function CallProvider({
   // STABLE Signaling Channels (Fixes connection drops by maintaining active channels)
   const incomingChannelRef = useRef<any>(null); // Listening to own incoming calls
   const outgoingChannelRef = useRef<any>(null); // Listening & transmitting to the partner
+  const isOutgoingSubscribed = useRef(false); // Guards against sending on an unsubscribed channel
+  const iceConfigRef = useRef<RTCConfiguration | null>(null); // Cache dynamic TURN credentials
 
   const supabase = useRef(createClient());
 
@@ -65,7 +67,7 @@ export function CallProvider({
     window.addEventListener("touchstart", unlockAudio);
 
     return () => {
-      soundsRef.current?.stop();
+      soundsRef.current?.destroy();
       window.removeEventListener("click", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
       window.removeEventListener("touchstart", unlockAudio);
@@ -143,8 +145,7 @@ export function CallProvider({
                       await pc.addIceCandidate(new RTCIceCandidate(candidate));
                     }
                   }
-
-                  setActiveCall((prev) => (prev ? { ...prev, status: "connected" } : null));
+                  // "connected" status is now set by oniceconnectionstatechange when ICE actually establishes
                 } catch (e) {
                   console.error("Failed to apply remote SDP description:", e);
                   toast.error("RTC connection failed", { style: TOAST.ERROR });
@@ -225,7 +226,19 @@ export function CallProvider({
           logCall(activeCall.conversationId, activeCall.isVideo ? "📞 Missed video call" : "📞 Missed voice call");
         } else if (activeCall.status === "incoming") {
           toast("Missed call", { style: TOAST.SUCCESS });
-          sendSignal({ type: "call-declined", calleeId: currentUserId });
+          // outgoingChannelRef is null for an unanswered call — use a temp channel to notify caller
+          const partnerId = activeCall.partnerId;
+          const tempCh = supabase.current.channel(`call-lobby:${partnerId}`);
+          tempCh.subscribe((tempStatus) => {
+            if (tempStatus === "SUBSCRIBED") {
+              tempCh.send({
+                type: "broadcast",
+                event: "signal",
+                payload: { type: "call-declined", calleeId: currentUserId },
+              });
+              setTimeout(() => supabase.current.removeChannel(tempCh), 1500);
+            }
+          });
           logCall(activeCall.conversationId, activeCall.isVideo ? "📞 Missed video call" : "📞 Missed voice call");
         }
         soundsRef.current?.playEndCall();
@@ -251,7 +264,7 @@ export function CallProvider({
 
   // Transmit signals to the partner using a stable subscription channel
   const sendSignal = (payload: any) => {
-    if (outgoingChannelRef.current) {
+    if (outgoingChannelRef.current && isOutgoingSubscribed.current) {
       outgoingChannelRef.current.send({
         type: "broadcast",
         event: "signal",
@@ -281,6 +294,7 @@ export function CallProvider({
       supabase.current.removeChannel(outgoingChannelRef.current);
       outgoingChannelRef.current = null;
     }
+    isOutgoingSubscribed.current = false;
 
     setLocalStream(null);
     setRemoteStream(null);
@@ -290,6 +304,16 @@ export function CallProvider({
     iceQueueRef.current = [];
     pendingOfferRef.current = null;
   };
+
+  // Fetch and cache dynamic ICE configuration (TURN credentials from Metered.ca)
+  const getIceConfig = useCallback(async (): Promise<RTCConfiguration> => {
+    if (iceConfigRef.current) {
+      return iceConfigRef.current;
+    }
+    const config = await fetchDynamicIceServers();
+    iceConfigRef.current = config;
+    return config;
+  }, []);
 
   // Initiate call to partner (Caller logic)
   const initiateCall = async (
@@ -313,6 +337,9 @@ export function CallProvider({
     });
 
     try {
+      // 0. Fetch dynamic TURN credentials from Metered.ca
+      const iceConfig = await getIceConfig();
+
       // 1. Capture local media devices
       const stream = await navigator.mediaDevices.getUserMedia({
         video: isVideo
@@ -338,10 +365,12 @@ export function CallProvider({
       const channel = supabase.current.channel(partnerChannelName);
       outgoingChannelRef.current = channel;
 
+      isOutgoingSubscribed.current = false;
       channel.subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
+          isOutgoingSubscribed.current = true;
           // 3. Create peer connection once channel is open
-          const pc = new RTCPeerConnection(iceConfiguration);
+          const pc = new RTCPeerConnection(iceConfig);
           peerConnectionRef.current = pc;
 
           // Add media tracks
@@ -349,11 +378,15 @@ export function CallProvider({
             pc.addTrack(track, stream);
           });
 
-          // Log ICE state to debug local connection issues
           pc.oniceconnectionstatechange = () => {
             console.log("Caller ICE State:", pc.iceConnectionState);
+            if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+              setActiveCall((prev) => (prev ? { ...prev, status: "connected" } : null));
+            }
             if (pc.iceConnectionState === "failed") {
               toast.error("WebRTC Connection Failed (Firewall/NAT issue)");
+              sendSignal({ type: "call-ended", senderId: currentUserId });
+              cleanupCall();
             }
           };
 
@@ -374,9 +407,20 @@ export function CallProvider({
 
           // Receive remote video/audio track robustly
           pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-              setRemoteStream(event.streams[0]);
-            }
+            setRemoteStream((prevStream) => {
+              if (prevStream) {
+                const existingTracks = prevStream.getTracks();
+                if (!existingTracks.includes(event.track)) {
+                  // Return a NEW MediaStream so React detects the change and re-renders
+                  return new MediaStream([...existingTracks, event.track]);
+                }
+                return prevStream;
+              }
+              if (event.streams && event.streams[0]) {
+                return event.streams[0];
+              }
+              return new MediaStream([event.track]);
+            });
           };
 
           // Generate SDP offer and broadcast to partner
@@ -450,6 +494,9 @@ export function CallProvider({
     setActiveCall((prev) => (prev ? { ...prev, status: "connecting" } : null));
 
     try {
+      // 0. Fetch dynamic TURN credentials from Metered.ca
+      const iceConfig = await getIceConfig();
+
       const { sdp, isVideo } = pendingOfferRef.current;
 
       // 1. Capture local devices
@@ -477,10 +524,12 @@ export function CallProvider({
       const channel = supabase.current.channel(partnerChannelName);
       outgoingChannelRef.current = channel;
 
+      isOutgoingSubscribed.current = false;
       channel.subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
+          isOutgoingSubscribed.current = true;
           // 3. Setup peer connection
-          const pc = new RTCPeerConnection(iceConfiguration);
+          const pc = new RTCPeerConnection(iceConfig);
           peerConnectionRef.current = pc;
 
           // Add media tracks
@@ -488,11 +537,15 @@ export function CallProvider({
             pc.addTrack(track, stream);
           });
 
-          // Log ICE state to debug local connection issues
           pc.oniceconnectionstatechange = () => {
             console.log("Callee ICE State:", pc.iceConnectionState);
+            if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+              setActiveCall((prev) => (prev ? { ...prev, status: "connected" } : null));
+            }
             if (pc.iceConnectionState === "failed") {
               toast.error("WebRTC Connection Failed (Firewall/NAT issue)");
+              sendSignal({ type: "call-ended", senderId: currentUserId });
+              cleanupCall();
             }
           };
 
@@ -513,9 +566,20 @@ export function CallProvider({
 
           // Receive remote video/audio track robustly
           pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-              setRemoteStream(event.streams[0]);
-            }
+            setRemoteStream((prevStream) => {
+              if (prevStream) {
+                const existingTracks = prevStream.getTracks();
+                if (!existingTracks.includes(event.track)) {
+                  // Return a NEW MediaStream so React detects the change and re-renders
+                  return new MediaStream([...existingTracks, event.track]);
+                }
+                return prevStream;
+              }
+              if (event.streams && event.streams[0]) {
+                return event.streams[0];
+              }
+              return new MediaStream([event.track]);
+            });
           };
 
           // Apply received SDP Offer description
@@ -542,8 +606,7 @@ export function CallProvider({
               sdp: answer,
             },
           });
-
-          setActiveCall((prev) => (prev ? { ...prev, status: "connected" } : null));
+          // "connected" status is now set by oniceconnectionstatechange when ICE actually establishes
         }
       });
 
