@@ -53,6 +53,8 @@ model Profile {
   createdConversations Conversation[] @relation("ConversationCreator")
   blockedUsers         Block[]        @relation("BlockedBy")
   blockedByUsers       Block[]        @relation("BlockedUsers")
+  sentRequests         FriendRequest[] @relation("SentRequests")
+  receivedRequests     FriendRequest[] @relation("ReceivedRequests")
   @@index([username])
   @@index([isDeleted])
 }
@@ -172,4 +174,26 @@ model Block {
   @@unique([blockerId, blockedId])
   @@index([blockerId])
   @@index([blockedId])
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model FriendRequest {
+  id         String   @id @default(uuid()) @db.Uuid
+  senderId   String   @db.Uuid
+  receiverId String   @db.Uuid
+  status     RequestStatus @default(PENDING)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sender   Profile @relation("SentRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver Profile @relation("ReceivedRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId])
+  @@index([senderId])
 }

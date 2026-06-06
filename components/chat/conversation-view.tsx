@@ -5,22 +5,25 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { usePresence } from "./presence-provider";
+import { useCall } from "./call-provider";
 import { createClient } from "@/lib/supabase/client";
 import { NoMessagesEmptyState } from "./empty-states";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { sendMessage, markMessagesAsSeen, getMessages } from "@/lib/actions/chat";
+import { sendMessage, markMessagesAsSeen, getMessages, unfriend } from "@/lib/actions/chat";
 import type { ConversationSummary, CurrentUser, MessageDTO } from "@/lib/types/chat";
 import { archiveConversation, hideConversation, blockUser } from "@/lib/actions/settings";
 import { useState, useRef, useEffect, useLayoutEffect, useTransition, useOptimistic, useMemo } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Send, Phone, Video, MoreVertical, Paperclip, Smile, CheckCheck, Check, Loader2, Archive, Trash2, Shield, ChevronLeft } from "lucide-react";
+import { Send, Phone, Video, MoreVertical, Paperclip, Smile, CheckCheck, Check, Loader2, Archive, Trash2, Shield, ChevronLeft, UserMinus } from "lucide-react";
+import { TOAST } from "@/lib/utils";
+import { getOtherUser, formatLastSeen, getInitials } from "@/lib/chat-utils";
 
 interface ConversationViewProps {
   conversation: ConversationSummary;
   currentUser: CurrentUser;
-  initialMessages: MessageDTO[];
-  initialHasMore: boolean;
+  initialMessages?: MessageDTO[];
+  initialHasMore?: boolean;
   onToggleSidebar?: () => void;
 }
 
@@ -37,11 +40,6 @@ interface DisplayMessage {
   isSeen?: boolean;
 }
 
-function getOtherUser(conv: ConversationSummary, currentUserId: string) {
-  const other = conv.members.find((m) => m.userId !== currentUserId);
-  return other?.user ?? null;
-}
-
 export default function ConversationView({
   conversation,
   currentUser,
@@ -50,26 +48,14 @@ export default function ConversationView({
   onToggleSidebar,
 }: ConversationViewProps) {
   const [messageText, setMessageText] = useState("");
+  const { initiateCall } = useCall();
   const [showNotification, setShowNotification] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  const initialDisplayMessages = useMemo(() => {
-    return initialMessages.map(m => ({
-      id: m.id,
-      senderId: m.senderId,
-      senderName: m.sender.fullName ?? m.sender.username,
-      senderAvatar: m.sender.avatarUrl ?? undefined,
-      senderUsername: m.sender.username,
-      content: m.content ?? "",
-      time: new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      timestamp: new Date(m.createdAt).getTime(),
-      isSeen: m.messageSeens?.some(seen => seen.userId !== currentUser.id) ?? false,
-    }));
-  }, [initialMessages, currentUser.id]);
-
   const [paginatedMessages, setPaginatedMessages] = useState<DisplayMessage[]>([]);
-  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [hasMore, setHasMore] = useState(initialHasMore || false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const topSentinelRef = useRef<HTMLDivElement>(null);
@@ -83,6 +69,52 @@ export default function ConversationView({
   const [realtimeMessages, setRealtimeMessages] = useState<DisplayMessage[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+
+  const paginatedMessagesRef = useRef(paginatedMessages);
+  paginatedMessagesRef.current = paginatedMessages;
+
+  // Client-side fetch first page of messages on mount / conversation change
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    setPaginatedMessages([]);
+    setRealtimeMessages([]);
+    setHasMore(false);
+    lastMessageIdRef.current = null;
+    markedSeenRef.current = new Set();
+
+    async function loadInitial() {
+      try {
+        const res = await getMessages(conversation.id, undefined, 20);
+        if (!active) return;
+        if (res.messages) {
+          const displayMsgs = res.messages.map(m => ({
+            id: m.id,
+            senderId: m.senderId,
+            senderName: m.sender.fullName ?? m.sender.username,
+            senderAvatar: m.sender.avatarUrl ?? undefined,
+            senderUsername: m.sender.username,
+            content: m.content ?? "",
+            time: new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date(m.createdAt).getTime(),
+            isSeen: m.messageSeens?.some(seen => seen.userId !== currentUser.id) ?? false,
+          }));
+          setPaginatedMessages(displayMsgs);
+          setHasMore(res.hasMore);
+        }
+      } catch (err) {
+        console.error("Failed to load initial messages:", err);
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    }
+
+    loadInitial();
+
+    return () => {
+      active = false;
+    };
+  }, [conversation.id, currentUser.id]);
 
   // Stable Supabase client — never recreated on re-render (fixes typing indicators)
   const supabaseRef = useRef(createClient());
@@ -140,9 +172,9 @@ export default function ConversationView({
           if (newSeen.userId === currentUser.id) return;
           setRealtimeMessages(prev => {
             if (!prev.some(m => m.id === newSeen.messageId)) {
-              const initialMsg = initialDisplayMessages.find(m => m.id === newSeen.messageId);
-              if (initialMsg) {
-                return [...prev, { ...initialMsg, isSeen: true }];
+              const paginatedMsg = paginatedMessagesRef.current.find(m => m.id === newSeen.messageId);
+              if (paginatedMsg) {
+                return [...prev, { ...paginatedMsg, isSeen: true }];
               }
               return prev;
             }
@@ -163,9 +195,9 @@ export default function ConversationView({
         if (userId === currentUser.id) return;
         setRealtimeMessages(prev => {
           if (!prev.some(m => m.id === messageId)) {
-            const initialMsg = initialDisplayMessages.find(m => m.id === messageId);
-            if (initialMsg) {
-              return [...prev, { ...initialMsg, isSeen: true }];
+            const paginatedMsg = paginatedMessagesRef.current.find(m => m.id === messageId);
+            if (paginatedMsg) {
+              return [...prev, { ...paginatedMsg, isSeen: true }];
             }
             return prev;
           }
@@ -211,24 +243,15 @@ export default function ConversationView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation.id, currentUser.id]);
 
-  useEffect(() => {
-    setPaginatedMessages([]);
-    setHasMore(initialHasMore);
-    lastMessageIdRef.current = null;
-    setRealtimeMessages([]);
-    markedSeenRef.current = new Set(); // reset seen tracking on conversation switch
-  }, [conversation.id, initialHasMore]);
-
   const mergedMessages = useMemo(() => {
     const allMessagesMap = new Map<string, DisplayMessage>();
     paginatedMessages.forEach(m => allMessagesMap.set(m.id, m));
-    initialDisplayMessages.forEach(m => allMessagesMap.set(m.id, m));
     realtimeMessages.forEach(m => allMessagesMap.set(m.id, m));
 
     return Array.from(allMessagesMap.values()).sort(
       (a, b) => a.timestamp - b.timestamp
     );
-  }, [paginatedMessages, initialDisplayMessages, realtimeMessages]);
+  }, [paginatedMessages, realtimeMessages]);
 
   const [optimisticMessages, addOptimisticMessage] = useOptimistic(
     mergedMessages,
@@ -269,7 +292,7 @@ export default function ConversationView({
   const loadMoreMessages = async () => {
     if (isLoadingMore || !hasMore) return;
 
-    const currentOldestMsg = paginatedMessages[0] || initialDisplayMessages[0];
+    const currentOldestMsg = paginatedMessages[0];
     if (!currentOldestMsg) return;
 
     setIsLoadingMore(true);
@@ -285,7 +308,7 @@ export default function ConversationView({
     try {
       const res = await getMessages(conversation.id, currentOldestMsg.id);
       if (res.error) {
-        toast.error(res.error);
+        toast.error(res.error, { style: TOAST.ERROR });
         return;
       }
 
@@ -397,19 +420,7 @@ export default function ConversationView({
       ? (otherUser ? (onlineUsers[otherUser.id] ?? otherUser.isOnline) : false)
       : false;
 
-  let statusText = isOnline ? "Online" : "Offline";
-  if (!isOnline && otherUser?.lastSeen) {
-    const diffMs = new Date().getTime() - new Date(otherUser.lastSeen).getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffMins < 1) statusText = "Last seen just now";
-    else if (diffMins < 60) statusText = `Last seen ${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    else if (diffHours < 24) statusText = `Last seen ${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    else if (diffDays === 1) statusText = "Last seen yesterday";
-    else statusText = `Last seen ${diffDays} days ago`;
-  }
+  const statusText = formatLastSeen(isOnline, otherUser?.lastSeen ?? null);
 
   function handleSend(e?: React.FormEvent) {
     if (e) e.preventDefault();
@@ -505,7 +516,7 @@ export default function ConversationView({
   const typingValues = Object.values(typingUsers);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full bg-[#070709] text-white">
+    <div className="flex flex-col flex-1 min-h-0 w-full bg-[#070709] text-white animate-chat-open">
       {/* Header */}
       <div className="px-4 py-3 border-b border-stone-200 dark:border-stone-850 flex items-center justify-between bg-white/5 dark:bg-[#0c0c12]/80 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -523,7 +534,7 @@ export default function ConversationView({
                 <Avatar className="h-9 w-9">
                   <AvatarImage src={displayAvatar ?? ""} />
                   <AvatarFallback className="bg-stone-800 text-stone-300 text-sm font-semibold">
-                    {displayName.slice(0, 2).toUpperCase()}
+                    {getInitials(displayName)}
                   </AvatarFallback>
                 </Avatar>
                 {isOnline ? (
@@ -553,7 +564,7 @@ export default function ConversationView({
                 <Avatar className="h-9 w-9">
                   <AvatarImage src={displayAvatar ?? ""} />
                   <AvatarFallback className="bg-stone-800 text-stone-300 text-sm font-semibold">
-                    {displayName.slice(0, 2).toUpperCase()}
+                    {getInitials(displayName)}
                   </AvatarFallback>
                 </Avatar>
               </div>
@@ -576,20 +587,52 @@ export default function ConversationView({
 
         {/* Action icons */}
         <div className="flex items-center gap-1 shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-stone-400 hover:text-white hover:bg-stone-800/40 cursor-pointer"
-          >
-            <Phone className="h-4.5 w-4.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-stone-400 hover:text-white hover:bg-stone-800/40 cursor-pointer"
-          >
-            <Video className="h-4.5 w-4.5" />
-          </Button>
+          {conversation.type === "DIRECT" && otherUser && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  if (!isOnline) {
+                    toast.error(`${displayName} is offline. You can only call online users.`, { style: TOAST.ERROR });
+                    return;
+                  }
+                  initiateCall(
+                    otherUser.id,
+                    otherUser.fullName ?? otherUser.username,
+                    otherUser.avatarUrl ?? undefined,
+                    otherUser.username,
+                    false,
+                    conversation.id
+                  );
+                }}
+                className="text-stone-400 hover:text-white hover:bg-stone-800/40 cursor-pointer"
+              >
+                <Phone className="h-4.5 w-4.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  if (!isOnline) {
+                    toast.error(`${displayName} is offline. You can only call online users.`, { style: TOAST.ERROR });
+                    return;
+                  }
+                  initiateCall(
+                    otherUser.id,
+                    otherUser.fullName ?? otherUser.username,
+                    otherUser.avatarUrl ?? undefined,
+                    otherUser.username,
+                    true,
+                    conversation.id
+                  );
+                }}
+                className="text-stone-400 hover:text-white hover:bg-stone-800/40 cursor-pointer"
+              >
+                <Video className="h-4.5 w-4.5" />
+              </Button>
+            </>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -613,11 +656,11 @@ export default function ConversationView({
                 onClick={async () => {
                   const res = await archiveConversation(conversation.id);
                   if (res.success) {
-                    toast.success("Conversation archived");
+                    toast.success("Conversation archived", { style: TOAST.SUCCESS });
                     router.push("/chat");
                     router.refresh();
                   } else {
-                    toast.error(res.error ?? "Failed to archive conversation");
+                    toast.error(res.error ?? "Failed to archive conversation", { style: TOAST.ERROR });
                   }
                 }}
                 className="text-sm p-2 text-stone-300 gap-2 cursor-pointer focus:bg-stone-800 focus:text-white"
@@ -628,11 +671,11 @@ export default function ConversationView({
                 onClick={async () => {
                   const res = await hideConversation(conversation.id);
                   if (res.success) {
-                    toast.success("Conversation deleted");
+                    toast.success("Conversation deleted", { style: TOAST.SUCCESS });
                     router.push("/chat");
                     router.refresh();
                   } else {
-                    toast.error(res.error ?? "Failed to delete conversation");
+                    toast.error(res.error ?? "Failed to delete conversation", { style: TOAST.ERROR });
                   }
                 }}
                 className="text-sm p-2 text-stone-300 gap-2 cursor-pointer focus:bg-stone-800 focus:text-white"
@@ -644,13 +687,29 @@ export default function ConversationView({
                   <DropdownMenuSeparator className="bg-stone-800" />
                   <DropdownMenuItem
                     onClick={async () => {
-                      const res = await blockUser(otherUser.id);
+                      const res = await unfriend(otherUser.id);
                       if (res.success) {
-                        toast.success(`@${otherUser.username} has been blocked.`);
+                        toast.success(`Unfriended @${otherUser.username}`, { style: TOAST.SUCCESS });
                         router.push("/chat");
                         router.refresh();
                       } else {
-                        toast.error(res.error ?? "Failed to block user");
+                        toast.error(res.error ?? "Failed to unfriend user", { style: TOAST.ERROR });
+                      }
+                    }}
+                    className="text-sm p-2 text-stone-300 gap-2 cursor-pointer focus:bg-stone-800 focus:text-white"
+                  >
+                    <UserMinus className="h-4 w-4 text-stone-400" /> Unfriend
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-stone-800" />
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      const res = await blockUser(otherUser.id);
+                      if (res.success) {
+                        toast.success(`@${otherUser.username} has been blocked.`, { style: TOAST.SUCCESS });
+                        router.push("/chat");
+                        router.refresh();
+                      } else {
+                        toast.error(res.error ?? "Failed to block user", { style: TOAST.ERROR });
                       }
                     }}
                     className="text-sm p-2 text-red-400 focus:text-red-400 focus:bg-red-950/20 gap-2 cursor-pointer"
@@ -682,11 +741,50 @@ export default function ConversationView({
             </div>
           )}
 
-          {optimisticMessages.length === 0 ? (
+          {isLoading ? (
+            <div className="space-y-4 w-full overflow-hidden py-4">
+              {/* Left message skeleton */}
+              <div className="flex gap-3 justify-start">
+                <div className="h-8 w-8 rounded-full bg-stone-850 animate-pulse shrink-0 self-end" />
+                <div className="space-y-1 max-w-[70%]">
+                  <div className="h-10 w-48 bg-stone-850/60 animate-pulse rounded-2xl rounded-bl-none" />
+                  <div className="h-3 w-10 bg-stone-900/60 animate-pulse rounded ml-1" />
+                </div>
+              </div>
+
+              {/* Right message skeleton */}
+              <div className="flex gap-3 justify-end">
+                <div className="space-y-1 max-w-[70%]">
+                  <div className="h-14 w-64 bg-indigo-950/20 animate-pulse rounded-2xl rounded-br-none border border-indigo-900/10" />
+                  <div className="h-3 w-10 bg-stone-900/60 animate-pulse rounded mr-1 ml-auto" />
+                </div>
+              </div>
+
+              {/* Left message skeleton */}
+              <div className="flex gap-3 justify-start">
+                <div className="h-8 w-8 rounded-full bg-stone-850 animate-pulse shrink-0 self-end" />
+                <div className="space-y-1 max-w-[70%]">
+                  <div className="h-12 w-56 bg-stone-850/60 animate-pulse rounded-2xl rounded-bl-none" />
+                  <div className="h-3 w-10 bg-stone-900/60 animate-pulse rounded ml-1" />
+                </div>
+              </div>
+
+              {/* Right message skeleton */}
+              <div className="flex gap-3 justify-end">
+                <div className="space-y-1 max-w-[70%]">
+                  <div className="h-10 w-36 bg-indigo-950/20 animate-pulse rounded-2xl rounded-br-none border border-indigo-900/10" />
+                  <div className="h-3 w-10 bg-stone-900/60 animate-pulse rounded mr-1 ml-auto" />
+                </div>
+              </div>
+            </div>
+          ) : optimisticMessages.length === 0 ? (
             <NoMessagesEmptyState name={displayName} />
           ) : (
             optimisticMessages.map((m) => {
               const isMe = m.senderId === currentUser.id;
+              const isDelivered = conversation.type === "DIRECT"
+                ? (otherUser ? (onlineUsers[otherUser.id] ?? otherUser.isOnline) : false)
+                : conversation.members.some(mem => mem.userId !== currentUser.id && (onlineUsers[mem.userId] ?? mem.user.isOnline));
               return (
                 <div
                   key={m.id}
@@ -697,7 +795,7 @@ export default function ConversationView({
                       <Avatar className="h-8 w-8 shrink-0 self-end mb-1 hover:opacity-85 transition-opacity">
                         <AvatarImage src={m.senderAvatar} />
                         <AvatarFallback className="bg-stone-800 text-[10px] text-stone-350">
-                          {m.senderName.slice(0, 2).toUpperCase()}
+                          {getInitials(m.senderName)}
                         </AvatarFallback>
                       </Avatar>
                     </Link>
@@ -715,9 +813,14 @@ export default function ConversationView({
                     </div>
                     <span className={`text-[9px] text-stone-500 mt-1 flex items-center gap-1 ${isMe ? "justify-end mr-1.5" : "ml-1.5"}`}> {m.time}
                       {isMe && (
-                        m.isPending ? (<Loader2 className="h-3 w-3 animate-spin text-blue-400/70" />
-                        ) : m.isSeen ? (<CheckCheck className="h-3.5 w-3.5 text-blue-500" />
-                        ) : (<Check className="h-3.5 w-3.5 text-stone-500" />
+                        m.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin text-blue-400/70" />
+                        ) : m.isSeen ? (
+                          <CheckCheck className="h-3.5 w-3.5 text-blue-500" />
+                        ) : isDelivered ? (
+                          <CheckCheck className="h-3.5 w-3.5 text-stone-500 dark:text-stone-400" />
+                        ) : (
+                          <Check className="h-3.5 w-3.5 text-stone-500 dark:text-stone-400" />
                         )
                       )}
                     </span>
@@ -732,8 +835,8 @@ export default function ConversationView({
             <div className="flex gap-3 justify-start items-end animate-in fade-in slide-in-from-bottom-2">
               <Avatar className="h-8 w-8 shrink-0 mb-1">
                 <AvatarImage src={displayAvatar ?? ""} />
-                <AvatarFallback className="bg-stone-850 text-[10px] text-stone-350">
-                  {displayName.slice(0, 2).toUpperCase()}
+                <AvatarFallback className="bg-stone-855 text-[10px] text-stone-350">
+                  {getInitials(displayName)}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col">

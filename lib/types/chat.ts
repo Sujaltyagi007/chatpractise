@@ -31,6 +31,7 @@ export interface ConversationSummary {
   lastMessageAt: Date | null;
   members: ConversationMemberWithProfile[];
   lastMessage: LastMessage | null;
+  unreadCount?: number;
 }
 
 export interface CurrentUser {

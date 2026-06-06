@@ -76,3 +76,48 @@ body {
   animation: typing-bounce 1s infinite 0.4s;
 }
 
+/* Chat view opening transition animation */
+@keyframes slide-fade-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-chat-open {
+  animation: slide-fade-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Mobile-only left/right panel slide transitions */
+@media (max-width: 767px) {
+  @keyframes slide-from-right {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slide-from-left {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  .animate-chat-open {
+    animation: slide-from-right 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .animate-sidebar-open {
+    animation: slide-from-left 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+

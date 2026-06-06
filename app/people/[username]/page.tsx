@@ -29,6 +29,29 @@ export default async function PublicProfilePage({ params }: Props) {
   // Load block status server-side
   const blockStatus = await getBlockStatus(targetUser.id);
 
+  // Load friendship status server-side
+  const friendRequest = await prisma.friendRequest.findFirst({
+    where: {
+      OR: [
+        { senderId: currentUser.id, receiverId: targetUser.id },
+        { senderId: targetUser.id, receiverId: currentUser.id },
+      ],
+    },
+  });
+
+  let friendshipStatus: "NONE" | "SENT_REQUEST" | "RECEIVED_REQUEST" | "FRIENDS" = "NONE";
+  if (friendRequest) {
+    if (friendRequest.status === "ACCEPTED") {
+      friendshipStatus = "FRIENDS";
+    } else if (friendRequest.status === "PENDING") {
+      if (friendRequest.senderId === currentUser.id) {
+        friendshipStatus = "SENT_REQUEST";
+      } else {
+        friendshipStatus = "RECEIVED_REQUEST";
+      }
+    }
+  }
+
   return (
     <PresenceProvider currentUserId={currentUser.id}>
       <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex flex-col font-sans">
@@ -62,6 +85,8 @@ export default async function PublicProfilePage({ params }: Props) {
             currentUserId={currentUser.id}
             isBlocked={blockStatus.isBlocked}
             isBlockedBy={blockStatus.isBlockedBy}
+            initialFriendshipStatus={friendshipStatus}
+            initialRequestId={friendRequest?.id}
           />
         </main>
       </div>

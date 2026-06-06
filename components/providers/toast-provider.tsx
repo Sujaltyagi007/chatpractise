@@ -9,7 +9,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <>
       {children}
-      <Toaster richColors closeButton position="bottom-right" />
+      <Toaster richColors/>
       <Suspense fallback={null}>
         <UrlToastListener />
       </Suspense>

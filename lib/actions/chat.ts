@@ -17,13 +17,11 @@ export async function searchUsers(
   const trimmed = query.trim();
   if (!trimmed) return { users: [] };
 
-  // Get all blocked user IDs (in both directions)
   const blocks = await prisma.block.findMany({
-    where: {
-      OR: [{ blockerId: user.id }, { blockedId: user.id }],
-    },
+    where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] },
     select: { blockerId: true, blockedId: true },
   });
+
   const blockedIds = blocks.map((b) =>
     b.blockerId === user.id ? b.blockedId : b.blockerId
   );
@@ -63,6 +61,20 @@ export async function getOrCreateDirectConversation(
   if (!user) return { error: "Not authenticated" };
   if (user.id === targetUserId) return { error: "Cannot start conversation with yourself" };
 
+  // Check if they are friends (status: ACCEPTED)
+  const friendship = await prisma.friendRequest.findFirst({
+    where: {
+      OR: [
+        { senderId: user.id, receiverId: targetUserId, status: "ACCEPTED" },
+        { senderId: targetUserId, receiverId: user.id, status: "ACCEPTED" },
+      ],
+    },
+  });
+
+  if (!friendship) {
+    return { error: "You must be friends to chat. Please send or accept a friend request first." };
+  }
+
   // Find any DIRECT conversation that includes both users
   const candidates = await prisma.conversation.findMany({
     where: {
@@ -79,7 +91,16 @@ export async function getOrCreateDirectConversation(
 
   // Verify exactly 2 members (no group chats accidentally matched)
   const existing = candidates.find((c) => c.members.length === 2);
-  if (existing) return { conversationId: existing.id };
+  if (existing) {
+    // Unhide the conversation for both members when they open/start it again
+    await prisma.conversationMember.updateMany({
+      where: {
+        conversationId: existing.id,
+      },
+      data: { isHidden: false },
+    });
+    return { conversationId: existing.id };
+  }
 
   // Create new direct conversation
   const conversation = await prisma.conversation.create({
@@ -136,13 +157,38 @@ export async function getUserConversations(): Promise<{
 
   if (!user) return { conversations: [], error: "Not authenticated" };
 
-  const rows = await prisma.conversation.findMany({
-    where: {
-      isArchived: false,
-      members: { some: { userId: user.id, isHidden: false } },
-    },
-    include: conversationInclude,
-    orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
+  // Fetch unread counts and conversation rows in parallel
+  const [rows, unreadCounts] = await Promise.all([
+    prisma.conversation.findMany({
+      where: {
+        isArchived: false,
+        members: { some: { userId: user.id, isHidden: false } },
+      },
+      include: conversationInclude,
+      orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
+    }),
+    prisma.message.groupBy({
+      by: ['conversationId'],
+      where: {
+        conversation: {
+          members: { some: { userId: user.id } }
+        },
+        senderId: { not: user.id },
+        messageSeens: {
+          none: {
+            userId: user.id
+          }
+        }
+      },
+      _count: {
+        id: true
+      }
+    })
+  ]);
+
+  const unreadMap = new Map<string, number>();
+  unreadCounts.forEach((uc) => {
+    unreadMap.set(uc.conversationId, uc._count.id);
   });
 
   const conversations: ConversationSummary[] = rows.map((c) => ({
@@ -158,11 +204,12 @@ export async function getUserConversations(): Promise<{
     })),
     lastMessage: c.messages[0]
       ? {
-          content: c.messages[0].content,
-          createdAt: c.messages[0].createdAt,
-          sender: c.messages[0].sender,
-        }
+        content: c.messages[0].content,
+        createdAt: c.messages[0].createdAt,
+        sender: c.messages[0].sender,
+      }
       : null,
+    unreadCount: unreadMap.get(c.id) ?? 0,
   }));
 
   return { conversations };
@@ -180,8 +227,8 @@ export async function getConversationById(conversationId: string): Promise<{
 
   if (!user) return { error: "Not authenticated" };
 
-  // Run conversation fetch and profile fetch in parallel — one auth round-trip
-  const [row, profileRow] = await Promise.all([
+  // Run conversation fetch, profile fetch, and unread count fetch in parallel
+  const [row, profileRow, unreadCount] = await Promise.all([
     prisma.conversation.findFirst({
       where: {
         id: conversationId,
@@ -193,6 +240,17 @@ export async function getConversationById(conversationId: string): Promise<{
       where: { id: user.id },
       select: { id: true, email: true, username: true, fullName: true, avatarUrl: true, bio: true },
     }),
+    prisma.message.count({
+      where: {
+        conversationId,
+        senderId: { not: user.id },
+        messageSeens: {
+          none: {
+            userId: user.id
+          }
+        }
+      }
+    })
   ]);
 
   if (!row) return { error: "Conversation not found" };
@@ -212,11 +270,12 @@ export async function getConversationById(conversationId: string): Promise<{
       })),
       lastMessage: row.messages[0]
         ? {
-            content: row.messages[0].content,
-            createdAt: row.messages[0].createdAt,
-            sender: row.messages[0].sender,
-          }
+          content: row.messages[0].content,
+          createdAt: row.messages[0].createdAt,
+          sender: row.messages[0].sender,
+        }
         : null,
+      unreadCount,
     },
     profile: profileRow,
   };
@@ -316,7 +375,7 @@ export async function sendMessage(
     if (block) return { error: "Cannot send message: user is blocked" };
   }
 
-  // Transaction: create message + update lastMessageAt atomically
+  // Transaction: create message + update lastMessageAt atomically + unhide conversation for members
   const [message] = await prisma.$transaction([
     prisma.message.create({
       data: {
@@ -343,6 +402,10 @@ export async function sendMessage(
     prisma.conversation.update({
       where: { id: conversationId },
       data: { lastMessageAt: new Date() },
+    }),
+    prisma.conversationMember.updateMany({
+      where: { conversationId },
+      data: { isHidden: false },
     }),
   ]);
 
@@ -375,4 +438,215 @@ export async function markMessagesAsSeen(
     console.error("markMessagesAsSeen error:", error);
     return { success: false, error: "Failed to mark messages as seen" };
   }
+}
+
+export async function sendFriendRequest(receiverId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Not authenticated" };
+  if (user.id === receiverId) return { error: "Cannot send request to yourself" };
+
+  const block = await prisma.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: user.id, blockedId: receiverId },
+        { blockerId: receiverId, blockedId: user.id },
+      ],
+    },
+  });
+  if (block) return { error: "Cannot send request: user is blocked" };
+
+  const existing = await prisma.friendRequest.findFirst({
+    where: {
+      OR: [
+        { senderId: user.id, receiverId },
+        { senderId: receiverId, receiverId: user.id },
+      ],
+    },
+  });
+
+  if (existing) {
+    if (existing.status === 'ACCEPTED') return { error: "Already friends" };
+    if (existing.status === 'PENDING') return { error: "Request already pending" };
+  }
+
+  const request = await prisma.friendRequest.create({
+    data: {
+      senderId: user.id,
+      receiverId,
+      status: "PENDING",
+    },
+  });
+
+  return { request };
+}
+
+export async function getPendingFriendRequests() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { requests: [], error: "Not authenticated" };
+
+  const requests = await prisma.friendRequest.findMany({
+    where: {
+      receiverId: user.id,
+      status: "PENDING",
+    },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          username: true,
+          fullName: true,
+          avatarUrl: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return { requests };
+}
+
+export async function acceptFriendRequest(requestId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Not authenticated" };
+
+  const request = await prisma.friendRequest.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!request) return { error: "Request not found" };
+  if (request.receiverId !== user.id) return { error: "Unauthorized" };
+  if (request.status !== "PENDING") return { error: "Request already processed" };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.friendRequest.update({
+      where: { id: requestId },
+      data: { status: "ACCEPTED" },
+    });
+
+    const existingChat = await tx.conversation.findFirst({
+      where: {
+        type: "DIRECT",
+        AND: [
+          { members: { some: { userId: request.senderId } } },
+          { members: { some: { userId: request.receiverId } } },
+        ],
+      },
+    });
+
+    if (!existingChat) {
+      await tx.conversation.create({
+        data: {
+          type: "DIRECT",
+          createdById: request.senderId,
+          members: {
+            create: [
+              { userId: request.senderId, role: "MEMBER" },
+              { userId: request.receiverId, role: "MEMBER" },
+            ],
+          },
+        },
+      });
+    }
+  });
+
+  return { success: true };
+}
+
+export async function rejectFriendRequest(requestId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Not authenticated" };
+
+  const request = await prisma.friendRequest.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!request) return { error: "Request not found" };
+  if (request.receiverId !== user.id) return { error: "Unauthorized" };
+
+  await prisma.friendRequest.update({
+    where: { id: requestId },
+    data: { status: "REJECTED" },
+  });
+
+  return { success: true };
+}
+
+export async function unfriend(targetUserId: string): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { success: false, error: "Not authenticated" };
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Find the friend request row (can be sent or received, but must be status ACCEPTED)
+      const request = await tx.friendRequest.findFirst({
+        where: {
+          OR: [
+            { senderId: user.id, receiverId: targetUserId, status: "ACCEPTED" },
+            { senderId: targetUserId, receiverId: user.id, status: "ACCEPTED" },
+          ],
+        },
+      });
+
+      if (!request) return { success: false, error: "Friendship not found" };
+
+      // Delete the friendship request row
+      await tx.friendRequest.delete({
+        where: { id: request.id },
+      });
+
+      // Find the direct conversation between the two users
+      const conversation = await tx.conversation.findFirst({
+        where: {
+          type: "DIRECT",
+          AND: [
+            { members: { some: { userId: user.id } } },
+            { members: { some: { userId: targetUserId } } },
+          ],
+        },
+      });
+
+      if (conversation) {
+        // Delete the conversation, which will cascade delete messages and members
+        await tx.conversation.delete({
+          where: { id: conversation.id },
+        });
+      }
+
+      return { success: true };
+    });
+  } catch (err) {
+    console.error("Unfriend error:", err);
+    return { success: false, error: "Failed to unfriend user" };
+  }
+}
+
+export async function cancelFriendRequest(requestId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Not authenticated" };
+
+  const request = await prisma.friendRequest.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!request) return { error: "Request not found" };
+  if (request.senderId !== user.id) return { error: "Unauthorized" };
+  if (request.status !== "PENDING") return { error: "Request already processed" };
+
+  await prisma.friendRequest.delete({
+    where: { id: requestId },
+  });
+
+  return { success: true };
 }

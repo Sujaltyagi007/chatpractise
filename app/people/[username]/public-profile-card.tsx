@@ -3,52 +3,46 @@
 import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Calendar, MessageSquare, Loader2, User, AlertCircle, ShieldOff, Shield } from "lucide-react";
+import { Calendar, MessageSquare, Loader2, User, AlertCircle, ShieldOff, Shield, UserPlus, UserMinus, UserCheck, UserX } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePresence } from "@/components/chat/presence-provider";
-import { getOrCreateDirectConversation } from "@/lib/actions/chat";
+import { getOrCreateDirectConversation, sendFriendRequest, acceptFriendRequest, rejectFriendRequest, unfriend, cancelFriendRequest } from "@/lib/actions/chat";
 import { blockUser, unblockUser } from "@/lib/actions/settings";
 import type { Profile } from "@/lib/generated/prisma/client";
+import { formatLastSeen, getInitials } from "@/lib/chat-utils";
 
 interface PublicProfileCardProps {
   targetUser: Profile;
   currentUserId: string;
   isBlocked: boolean;
   isBlockedBy: boolean;
+  initialFriendshipStatus: "NONE" | "SENT_REQUEST" | "RECEIVED_REQUEST" | "FRIENDS";
+  initialRequestId?: string;
 }
 
-export default function PublicProfileCard({ targetUser, currentUserId, isBlocked: initialIsBlocked, isBlockedBy }: PublicProfileCardProps) {
+export default function PublicProfileCard({
+  targetUser,
+  currentUserId,
+  isBlocked: initialIsBlocked,
+  isBlockedBy,
+  initialFriendshipStatus,
+  initialRequestId,
+}: PublicProfileCardProps) {
   const router = useRouter();
   const onlineUsers = usePresence();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(initialIsBlocked);
+  const [friendshipStatus, setFriendshipStatus] = useState(initialFriendshipStatus);
+  const [requestId, setRequestId] = useState<string | undefined>(initialRequestId);
 
   // Check online status via real-time presence context
   const isOnline = onlineUsers[targetUser.id] ?? targetUser.isOnline;
 
   // Format status & last seen
-  let statusText = isOnline ? "Active Now" : "Offline";
-  if (!isOnline && targetUser.lastSeen) {
-    const diffMs = new Date().getTime() - new Date(targetUser.lastSeen).getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffMins < 1) {
-      statusText = "Last seen just now";
-    } else if (diffMins < 60) {
-      statusText = `Last seen ${diffMins} minute${diffMins > 1 ? "s" : ""} ago`;
-    } else if (diffHours < 24) {
-      statusText = `Last seen ${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
-    } else if (diffDays === 1) {
-      statusText = "Last seen yesterday";
-    } else {
-      statusText = `Last seen ${diffDays} days ago`;
-    }
-  }
+  const statusText = formatLastSeen(isOnline, targetUser.lastSeen);
 
   // Format join date
   const joinDate = new Date(targetUser.createdAt).toLocaleDateString("en-US", {
@@ -88,6 +82,82 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
     });
   };
 
+  const handleAddFriend = () => {
+    if (isPending) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await sendFriendRequest(targetUser.id);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setFriendshipStatus("SENT_REQUEST");
+      if (res.request) {
+        setRequestId(res.request.id);
+      }
+      router.refresh();
+    });
+  };
+
+  const handleCancelRequest = () => {
+    if (isPending || !requestId) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await cancelFriendRequest(requestId);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setFriendshipStatus("NONE");
+      setRequestId(undefined);
+      router.refresh();
+    });
+  };
+
+  const handleAcceptRequest = () => {
+    if (isPending || !requestId) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await acceptFriendRequest(requestId);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setFriendshipStatus("FRIENDS");
+      router.refresh();
+    });
+  };
+
+  const handleRejectRequest = () => {
+    if (isPending || !requestId) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await rejectFriendRequest(requestId);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setFriendshipStatus("NONE");
+      setRequestId(undefined);
+      router.refresh();
+    });
+  };
+
+  const handleUnfriend = () => {
+    if (isPending) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await unfriend(targetUser.id);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setFriendshipStatus("NONE");
+      setRequestId(undefined);
+      router.refresh();
+    });
+  };
+
   const isSelf = targetUser.id === currentUserId;
 
   return (
@@ -103,7 +173,7 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
             <Avatar className="h-28 w-28 ring-4 ring-white dark:ring-stone-900 shadow-md">
               <AvatarImage src={targetUser.avatarUrl ?? ""} />
               <AvatarFallback className="bg-indigo-600 text-white text-3xl font-bold">
-                {(targetUser.fullName ?? targetUser.username).slice(0, 2).toUpperCase()}
+                {getInitials(targetUser.fullName, targetUser.username)}
               </AvatarFallback>
             </Avatar>
             {/* Status dot on avatar */}
@@ -147,19 +217,96 @@ export default function PublicProfileCard({ targetUser, currentUserId, isBlocked
               </Link>
             ) : (
               <>
-                {!isBlockedBy && (
-                  <Button
-                    onClick={handleMessageUser}
-                    disabled={isPending || isBlocked}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-sm shadow-sm disabled:opacity-50"
-                  >
-                    {isPending ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" /><span>Loading...</span></>
-                    ) : (
-                      <><MessageSquare className="h-4 w-4" /><span>Message</span></>
+                {!isBlockedBy && !isBlocked && (
+                  <>
+                    {/* Connection lifecycle state buttons */}
+                    {friendshipStatus === "NONE" && (
+                      <Button
+                        onClick={handleAddFriend}
+                        disabled={isPending}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-sm shadow-sm disabled:opacity-50"
+                      >
+                        {isPending ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /><span>Loading...</span></>
+                        ) : (
+                          <><UserPlus className="h-4 w-4" /><span>Add Friend</span></>
+                        )}
+                      </Button>
                     )}
-                  </Button>
+
+                    {friendshipStatus === "SENT_REQUEST" && (
+                      <Button
+                        onClick={handleCancelRequest}
+                        disabled={isPending}
+                        variant="outline"
+                        className="border-stone-200 dark:border-stone-800 text-stone-700 dark:text-stone-300 gap-2 text-sm shadow-sm hover:bg-red-50 dark:hover:bg-red-950/20 hover:text-red-600 dark:hover:text-red-400"
+                      >
+                        {isPending ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" /><span>Loading...</span></>
+                        ) : (
+                          <><UserX className="h-4 w-4" /><span>Cancel Request</span></>
+                        )}
+                      </Button>
+                    )}
+
+                    {friendshipStatus === "RECEIVED_REQUEST" && (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={handleAcceptRequest}
+                          disabled={isPending}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-sm shadow-sm"
+                        >
+                          {isPending ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /><span>Accepting...</span></>
+                          ) : (
+                            <><UserCheck className="h-4 w-4" /><span>Accept</span></>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={handleRejectRequest}
+                          disabled={isPending}
+                          variant="outline"
+                          className="border-stone-200 dark:border-stone-800 gap-2 text-sm shadow-sm hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 dark:text-red-400"
+                        >
+                          {isPending ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /><span>Rejecting...</span></>
+                          ) : (
+                            <><UserX className="h-4 w-4" /><span>Reject</span></>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+
+                    {friendshipStatus === "FRIENDS" && (
+                      <>
+                        <Button
+                          onClick={handleMessageUser}
+                          disabled={isPending}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-sm shadow-sm disabled:opacity-50"
+                        >
+                          {isPending ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /><span>Loading...</span></>
+                          ) : (
+                            <><MessageSquare className="h-4 w-4" /><span>Message</span></>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={handleUnfriend}
+                          disabled={isPending}
+                          variant="outline"
+                          className="border-red-200 hover:bg-red-50 text-red-600 dark:text-red-400 dark:border-red-900/40 dark:hover:bg-red-950/20 gap-2 text-sm shadow-sm"
+                        >
+                          {isPending ? (
+                            <><Loader2 className="h-4 w-4 animate-spin" /><span>Unfriending...</span></>
+                          ) : (
+                            <><UserMinus className="h-4 w-4" /><span>Unfriend</span></>
+                          )}
+                        </Button>
+                      </>
+                    )}
+                  </>
                 )}
+
                 <Button
                   onClick={handleToggleBlock}
                   disabled={isPending}

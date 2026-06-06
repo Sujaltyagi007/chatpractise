@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { toast } from "sonner";
+import { TOAST } from "@/lib/utils";
 
 export function UrlToastListener() {
   const searchParams = useSearchParams();
@@ -15,11 +16,11 @@ export function UrlToastListener() {
     const success = searchParams.get("success");
 
     if (message) {
-      toast.success(message);
+      toast.success(message, { style: TOAST.SUCCESS });
     } else if (success) {
-      toast.success(success);
+      toast.success(success, { style: TOAST.SUCCESS });
     } else if (error) {
-      toast.error(error);
+      toast.error(error, { style: TOAST.ERROR });
     }
 
     if (message || error || success) {

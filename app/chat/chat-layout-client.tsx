@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Menu, MessageSquare, User, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChatSidebar from "@/components/chat/chat-sidebar";
 import MobileSidebarDrawer from "@/components/chat/mobile-sidebar-drawer";
 import { PresenceProvider } from "@/components/chat/presence-provider";
+import { CallProvider } from "@/components/chat/call-provider";
 import type { ConversationSummary, CurrentUser } from "@/lib/types/chat";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
+import { TOAST } from "@/lib/utils";
 
 interface ChatLayoutClientProps {
   profile: CurrentUser;
@@ -21,130 +24,130 @@ export default function ChatLayoutClient({ profile, conversations: initialConver
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [conversations, setConversations] = useState(initialConversations);
   const pathname = usePathname();
+  const router = useRouter();
+
+  const totalUnreadCount = conversations.reduce((acc, c) => acc + (c.unreadCount ?? 0), 0);
+
+  // Track latest conversations state in a mutable ref to access it cleanly in the event listener callback
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
 
   const isConversationPage = pathname.match(/^\/chat\/[a-zA-Z0-9-]+$/);
 
   useEffect(() => {
+    setConversations(initialConversations);
+  }, [initialConversations]);
+
+  useEffect(() => {
+    const match = pathname.match(/^\/chat\/([a-zA-Z0-9-]+)$/);
+    if (match) {
+      const activeId = match[1];
+      setConversations(prev =>
+        prev.map(c => c.id === activeId ? { ...c, unreadCount: 0 } : c)
+      );
+    }
+  }, [pathname]);
+
+  useEffect(() => {
     const supabase = createClient();
-    const channel = supabase
-      .channel('sidebar-realtime')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'Message',
-      }, (payload) => {
-        const newMessage = payload.new as any;
-        setConversations(prev => {
-          const idx = prev.findIndex(c => c.id === newMessage.conversationId);
-          if (idx === -1) return prev;
+    const messageChannel = supabase.channel(`sidebar-realtime-messages_${Math.random().toString(36).substring(2, 9)}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'Message', }, (payload) => {
+      const newMessage = payload.new as any;
 
-          const conv = prev[idx];
-          const senderMember = conv.members.find(m => m.userId === newMessage.senderId);
+      // Retrieve the current conversations using the ref
+      const currentConversations = conversationsRef.current;
+      const conv = currentConversations.find(c => c.id === newMessage.conversationId);
 
-          const updatedConv = {
-            ...conv,
-            lastMessageAt: new Date(newMessage.createdAt),
-            lastMessage: {
-              content: newMessage.content,
-              createdAt: new Date(newMessage.createdAt),
-              sender: senderMember ? {
-                fullName: senderMember.user.fullName,
-                username: senderMember.user.username,
-              } : { fullName: null, username: "Unknown" }
+      if (conv && newMessage.senderId !== profile.id && pathname !== `/chat/${newMessage.conversationId}`) {
+        const senderMember = conv.members.find(m => m.userId === newMessage.senderId);
+        const senderName = senderMember?.user.fullName || senderMember?.user.username || "Someone";
+        const chatName = conv.type === "GROUP" ? ` in ${conv.name || "Group"}` : "";
+
+        toast.success(`New message from ${senderName}${chatName}`, {
+          description: newMessage.content || "Sent an attachment",
+          action: {
+            label: "View",
+            onClick: () => {
+              router.push(`/chat/${newMessage.conversationId}`);
             }
-          };
-
-          const next = [...prev];
-          next[idx] = updatedConv;
-          return next.sort((a, b) => {
-            const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-            const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-            return tb - ta;
-          });
+          },
+          style: TOAST.SUCCESS
         });
-      })
+      }
+
+      setConversations(prev => {
+        const idx = prev.findIndex(c => c.id === newMessage.conversationId);
+        if (idx === -1) return prev;
+
+        const currentConv = prev[idx];
+        const senderMember = currentConv.members.find(m => m.userId === newMessage.senderId);
+        const isCurrentActive = pathname === `/chat/${newMessage.conversationId}`;
+        const isIncoming = newMessage.senderId !== profile.id;
+
+        const updatedConv = {
+          ...currentConv,
+          unreadCount: (currentConv.unreadCount ?? 0) + (isIncoming && !isCurrentActive ? 1 : 0),
+          lastMessageAt: new Date(newMessage.createdAt),
+          lastMessage: {
+            content: newMessage.content,
+            createdAt: new Date(newMessage.createdAt),
+            sender: senderMember ? {
+              fullName: senderMember.user.fullName,
+              username: senderMember.user.username,
+            } : { fullName: null, username: "Unknown" }
+          }
+        };
+
+        const next = [...prev];
+        next[idx] = updatedConv;
+        return next.sort((a, b) => {
+          const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+          const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+          return tb - ta;
+        });
+      });
+    })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    const outgoingRequestsChannel = supabase.channel(`sidebar-realtime-outgoing-requests-${profile.id}_${Math.random().toString(36).substring(2, 9)}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'FriendRequest'
+      }, (payload) => {
+        const updated = payload.new as any;
+        if (updated?.senderId === profile.id && updated.status === 'ACCEPTED') {
+          router.refresh();
+        }
+      })
+      .subscribe();
+    const memberChannel = supabase.channel(`sidebar-realtime-members-${profile.id}_${Math.random().toString(36).substring(2, 9)}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ConversationMember', filter: `userId=eq.${profile.id}` }, () => { router.refresh(); }).subscribe();
+
+    return () => {
+      supabase.removeChannel(messageChannel);
+      supabase.removeChannel(outgoingRequestsChannel);
+      supabase.removeChannel(memberChannel);
+    };
+  }, [profile.id, router]);
 
   return (
     <PresenceProvider currentUserId={profile.id}>
-      <div className="flex h-screen bg-stone-50 dark:bg-[#070709] overflow-hidden font-sans text-white">
-        {/* Desktop Sidebar */}
-        <div className="w-72 xl:w-80 shrink-0 border-r border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900/40 backdrop-blur-md h-full hidden md:flex md:flex-col">
-          <ChatSidebar currentUser={profile} conversations={conversations} />
-        </div>
-
-        {/* Mobile Drawer */}
-        <MobileSidebarDrawer
-          isOpen={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          currentUser={profile}
-          conversations={conversations}
-        />
-
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0 h-full relative">
-          {/* Mobile top bar */}
-          {!isConversationPage && (
-            <div className="md:hidden flex items-center gap-3 px-4 h-14 border-b border-stone-200 dark:border-stone-850 bg-white dark:bg-[#0c0c12]/80 backdrop-blur-md shrink-0">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setDrawerOpen(true)}
-                className="text-stone-500 hover:text-stone-900 dark:hover:text-white"
-                aria-label="Open menu"
-              >
-                <Menu className="h-5 w-5" />
-              </Button>
-              <div className="flex items-center gap-2 text-indigo-600 dark:text-blue-500 font-semibold text-sm">
-                <img src="/icon.svg" alt="ChatFlow Logo" className="h-5 w-5 object-contain" />
-                <span>ChatFlow</span>
-              </div>
-            </div>
-          )}
-
-          {/* Children content area with spacing for bottom nav on mobile */}
-          <div className="flex-1 min-h-0 mb-16 md:mb-0 flex flex-col">
-            {children}
+      <CallProvider currentUser={profile}>
+        <div className="flex h-screen bg-stone-50 dark:bg-[#070709] overflow-hidden font-sans text-white">
+          <div className={`
+            shrink-0 border-r border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900/40 backdrop-blur-md h-full
+            ${isConversationPage ? "hidden md:flex md:flex-col w-72 xl:w-80" : "flex flex-col w-full md:w-72 xl:w-80 animate-sidebar-open"}
+          `}>
+            <ChatSidebar currentUser={profile} conversations={conversations} />
           </div>
 
-          {/* Responsive Mobile Bottom Nav */}
-          <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white/95 dark:bg-[#0c0c12]/95 dark:border-stone-850 flex items-center justify-around z-40 backdrop-blur-md px-6 shadow-2xl">
-            <Link
-              href="/chat"
-              className={`flex flex-col items-center gap-1 transition-colors ${pathname.startsWith('/chat')
-                  ? 'text-blue-500'
-                  : 'text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-white'
-                }`}
-            >
-              <MessageSquare className="h-5 w-5 fill-current/10" />
-              <span className="text-[10px] font-medium">Chats</span>
-            </Link>
-            <Link
-              href="/profile"
-              className={`flex flex-col items-center gap-1 transition-colors ${pathname.startsWith('/profile')
-                  ? 'text-blue-500'
-                  : 'text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-white'
-                }`}
-            >
-              <User className="h-5 w-5" />
-              <span className="text-[10px] font-medium">Contacts</span>
-            </Link>
-            <Link
-              href="/settings"
-              className={`flex flex-col items-center gap-1 transition-colors ${pathname.startsWith('/settings')
-                  ? 'text-blue-500'
-                  : 'text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-white'
-                }`}
-            >
-              <Settings className="h-5 w-5" />
-              <span className="text-[10px] font-medium">Settings</span>
-            </Link>
+          <div className={`
+            flex-1 flex flex-col min-w-0 h-full relative
+            ${isConversationPage ? "flex" : "hidden md:flex"}
+          `}>
+            <div className="flex-1 min-h-0 flex flex-col">{children}</div>
           </div>
         </div>
-      </div>
+      </CallProvider>
     </PresenceProvider>
   );
 }

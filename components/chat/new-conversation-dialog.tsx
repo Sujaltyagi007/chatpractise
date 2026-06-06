@@ -7,8 +7,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { searchUsers, getOrCreateDirectConversation } from "@/lib/actions/chat";
+import { searchUsers, sendFriendRequest, getOrCreateDirectConversation } from "@/lib/actions/chat";
 import type { ProfileSummary } from "@/lib/types/chat";
+import { getInitials } from "@/lib/chat-utils";
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -68,19 +69,21 @@ export default function NewConversationDialog({
   async function handleSelectUser(user: ProfileSummary) {
     setCreating(user.id);
     setError(null);
-    const { conversationId, error } = await getOrCreateDirectConversation(user.id);
-    if (error || !conversationId) {
-      setError(error ?? "Failed to open conversation");
+    const { error } = await sendFriendRequest(user.id);
+    if (error) {
+      if (error === "Already friends") {
+        const res = await getOrCreateDirectConversation(user.id);
+        if (res.conversationId) {
+          router.push(`/chat/${res.conversationId}`);
+          onOpenChange(false);
+          return;
+        }
+      }
+      setError(error);
       setCreating(null);
       return;
     }
     onOpenChange(false);
-    router.push(`/chat/${conversationId}`);
-    router.refresh();
-  }
-
-  function getInitials(user: ProfileSummary) {
-    return (user.fullName ?? user.username).slice(0, 2).toUpperCase();
   }
 
   return (
@@ -89,7 +92,7 @@ export default function NewConversationDialog({
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-stone-100 dark:border-stone-800">
           <DialogTitle className="text-base font-semibold text-stone-950 dark:text-white flex items-center gap-2">
             <MessageSquarePlus className="h-5 w-5 text-indigo-600" />
-            New Direct Message
+            Add Friend
           </DialogTitle>
         </DialogHeader>
 
@@ -164,7 +167,7 @@ export default function NewConversationDialog({
                       <Avatar className="h-10 w-10">
                         <AvatarImage src={user.avatarUrl ?? ""} />
                         <AvatarFallback className="bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-semibold text-sm">
-                          {getInitials(user)}
+                          {getInitials(user.fullName, user.username)}
                         </AvatarFallback>
                       </Avatar>
                       {user.isOnline && (

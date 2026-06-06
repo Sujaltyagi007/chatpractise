@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Search, Plus, Settings, LogOut, User, Archive,
+  Search, Plus, Settings, LogOut, User, Archive, Trash2,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -18,62 +18,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { signOut } from "@/lib/actions/auth";
 import NewConversationDialog from "@/components/chat/new-conversation-dialog";
+import FriendRequestsButton from "@/components/chat/friend-requests-button";
 import { NoConversationsEmptyState } from "@/components/chat/empty-states";
 import type { ConversationSummary, CurrentUser } from "@/lib/types/chat";
+import { toast } from "sonner";
+import { TOAST } from "@/lib/utils";
+import { hideConversation } from "@/lib/actions/settings";
+import { getConversationDisplay, formatMessageTime, getLastMessagePreview, getInitials } from "@/lib/chat-utils";
 
 interface ChatSidebarProps {
   currentUser: CurrentUser;
   conversations: ConversationSummary[];
   onConversationSelect?: () => void;
-}
-
-function getConversationDisplay(
-  conv: ConversationSummary,
-  currentUserId: string
-): { name: string; avatarUrl: string | null; isOnline: boolean } {
-  if (conv.type === "DIRECT") {
-    const other = conv.members.find((m) => m.userId !== currentUserId);
-    if (other) {
-      return {
-        name: other.user.fullName ?? other.user.username,
-        avatarUrl: other.user.avatarUrl,
-        isOnline: other.user.isOnline,
-      };
-    }
-  }
-  return {
-    name: conv.name ?? "Group",
-    avatarUrl: conv.imageUrl,
-    isOnline: false,
-  };
-}
-
-function formatTime(date: Date | null): string {
-  if (!date) return "";
-  const d = new Date(date);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays === 0) {
-    return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-  }
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return d.toLocaleDateString("en-US", { weekday: "short" });
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function getLastMessagePreview(
-  conv: ConversationSummary,
-  currentUserId: string
-): string {
-  if (!conv.lastMessage) return "No messages yet";
-  const { sender, content } = conv.lastMessage;
-  const senderName =
-    conv.members.find((m) => m.user.username === sender.username)?.userId ===
-      currentUserId
-      ? "You"
-      : sender.fullName ?? sender.username;
-  return `${senderName}: ${content ?? ""}`;
 }
 
 export default function ChatSidebar({ currentUser, conversations, onConversationSelect }: ChatSidebarProps) {
@@ -101,7 +57,7 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
             <Avatar className="h-9 w-9 shrink-0 ring-2 ring-indigo-500/20">
               <AvatarImage src={currentUser.avatarUrl ?? ""} />
               <AvatarFallback className="bg-indigo-600 text-white font-bold text-sm">
-                {(currentUser.fullName ?? currentUser.username).slice(0, 2).toUpperCase()}
+                {getInitials(currentUser.fullName, currentUser.username)}
               </AvatarFallback>
             </Avatar>
             <div className="flex flex-col min-w-0">
@@ -112,7 +68,9 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
             </div>
           </div>
 
-          <DropdownMenu>
+          <div className="flex items-center gap-1">
+            <FriendRequestsButton userId={currentUser.id} />
+            <DropdownMenu>
             <DropdownMenuTrigger
               render={
                 <Button
@@ -157,6 +115,7 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         </div>
 
         {/* Search */}
@@ -190,14 +149,15 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
               const display = getConversationDisplay(conv, currentUser.id);
               const isActive = pathname === `/chat/${conv.id}`;
               const preview = getLastMessagePreview(conv, currentUser.id);
-              const time = formatTime(conv.lastMessageAt);
+              const time = formatMessageTime(conv.lastMessageAt);
+              const hasUnread = conv.unreadCount !== undefined && conv.unreadCount > 0;
 
               return (
-                <button
+                <div
                   key={conv.id}
                   onClick={() => handleConversationClick(conv.id)}
                   className={`
-                    w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-150
+                    group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-150 cursor-pointer
                     ${isActive
                       ? "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-50"
                       : "hover:bg-stone-50 dark:hover:bg-stone-800/50 text-stone-700 dark:text-stone-300"
@@ -208,7 +168,7 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
                     <Avatar className="h-9 w-9">
                       <AvatarImage src={display.avatarUrl ?? ""} />
                       <AvatarFallback className="bg-stone-200 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-xs font-semibold">
-                        {display.name.slice(0, 2).toUpperCase()}
+                        {getInitials(display.name)}
                       </AvatarFallback>
                     </Avatar>
                     {display.isOnline && (
@@ -217,14 +177,48 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="font-semibold text-sm truncate">{display.name}</span>
+                      <span className={`text-sm truncate ${hasUnread ? "font-bold text-stone-950 dark:text-white" : "font-semibold"}`}>{display.name}</span>
                       {time && (
-                        <span className="text-[10px] text-stone-400 shrink-0">{time}</span>
+                        <span className={`text-[10px] shrink-0 ${hasUnread ? "text-indigo-600 dark:text-indigo-400 font-semibold" : "text-stone-400"}`}>{time}</span>
                       )}
                     </div>
-                    <p className="text-xs text-stone-500 truncate mt-0.5">{preview}</p>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <p className={`text-xs truncate flex-1 ${hasUnread ? "text-stone-900 dark:text-stone-200 font-medium" : "text-stone-500"}`}>{preview}</p>
+                      
+                      <div className="relative flex items-center justify-center shrink-0 w-5 h-5">
+                        {hasUnread && (
+                          <span className="absolute flex items-center justify-center h-4.5 min-w-4.5 px-1.5 rounded-full bg-indigo-600 dark:bg-indigo-500 text-[10px] font-bold text-white shrink-0 group-hover:scale-0 transition-transform duration-150">
+                            {conv.unreadCount}
+                          </span>
+                        )}
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (confirm(`Are you sure you want to delete the conversation with ${display.name}?`)) {
+                              const res = await hideConversation(conv.id);
+                              if (res.success) {
+                                toast.success("Conversation deleted", { style: TOAST.SUCCESS });
+                                if (pathname === `/chat/${conv.id}`) {
+                                  router.push("/chat");
+                                }
+                                router.refresh();
+                              } else {
+                                toast.error(res.error ?? "Failed to delete conversation", { style: TOAST.ERROR });
+                              }
+                            }
+                          }}
+                          className={`
+                            absolute p-1 rounded-md text-stone-400 hover:text-red-500 hover:bg-stone-200/50 dark:hover:bg-stone-850/80 transition-all duration-150
+                            ${hasUnread ? "scale-0 group-hover:scale-100" : "opacity-0 group-hover:opacity-100"}
+                          `}
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

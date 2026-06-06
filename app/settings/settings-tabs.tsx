@@ -11,6 +11,7 @@ import { changePassword } from "@/lib/actions/auth";
 import { signOut } from "@/lib/actions/auth";
 import DangerZone from "./danger-zone";
 import { toast } from "sonner";
+import { TOAST } from "@/lib/utils";
 
 interface Profile {
   id: string;
@@ -59,9 +60,9 @@ function ProfileTab({ profile }: { profile: Profile }) {
 
   useEffect(() => {
     if (state.success) {
-      toast.success("Profile updated successfully!");
+      toast.success("Profile updated successfully!", { style: TOAST.SUCCESS });
     } else if (state.error) {
-      toast.error(state.error);
+      toast.error(state.error, { style: TOAST.ERROR });
     }
   }, [state.success, state.error]);
 
@@ -236,9 +237,9 @@ function SecurityTab() {
 
   useEffect(() => {
     if (state.success) {
-      toast.success("Password changed successfully!");
+      toast.success("Password changed successfully!", { style: TOAST.SUCCESS });
     } else if (state.error) {
-      toast.error(state.error);
+      toast.error(state.error, { style: TOAST.ERROR });
     }
   }, [state.success, state.error]);
 
