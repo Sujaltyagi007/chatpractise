@@ -2,13 +2,13 @@
 
 import { useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { toast } from "sonner";
-import { TOAST } from "@/lib/utils";
+import { useNotification } from "@/lib/hooks/use-notification";
 
-export function UrlToastListener() {
+export function UrlNotificationListener() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+  const notification = useNotification();
 
   useEffect(() => {
     const message = searchParams.get("message");
@@ -16,11 +16,11 @@ export function UrlToastListener() {
     const success = searchParams.get("success");
 
     if (message) {
-      toast.success(message, { style: TOAST.SUCCESS });
+      notification.success(message);
     } else if (success) {
-      toast.success(success, { style: TOAST.SUCCESS });
+      notification.success(success);
     } else if (error) {
-      toast.error(error, { style: TOAST.ERROR });
+      notification.error(error);
     }
 
     if (message || error || success) {
@@ -33,7 +33,7 @@ export function UrlToastListener() {
       const newUrl = pathname + (query ? `?${query}` : "");
       router.replace(newUrl);
     }
-  }, [searchParams, pathname, router]);
+  }, [searchParams, pathname, router, notification]);
 
   return null;
 }

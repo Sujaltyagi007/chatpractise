@@ -55,4 +55,5 @@ export interface MessageDTO {
     avatarUrl: string | null;
   };
   messageSeens?: { userId: string }[];
+  reactions?: { userId: string; emoji: string }[];
 }

@@ -3,8 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { sendMessage } from "@/lib/actions/chat";
-import { toast } from "sonner";
-import { TOAST } from "@/lib/utils";
+import { useNotification } from "@/lib/hooks/use-notification";
 import { CallSounds } from "./call-sounds";
 import { CallState, CallContextType, fetchDynamicIceServers } from "./call-types";
 import { CallOverlay } from "./call-overlay";
@@ -24,6 +23,7 @@ export function CallProvider({
   };
 }) {
   const currentUserId = currentUser.id;
+  const notification = useNotification();
 
   // UI States
   const [activeCall, setActiveCall] = useState<CallState | null>(null);
@@ -148,7 +148,7 @@ export function CallProvider({
                   // "connected" status is now set by oniceconnectionstatechange when ICE actually establishes
                 } catch (e) {
                   console.error("Failed to apply remote SDP description:", e);
-                  toast.error("RTC connection failed", { style: TOAST.ERROR });
+                  notification.error("RTC connection failed");
                   cleanupCall();
                 }
               }
@@ -157,7 +157,7 @@ export function CallProvider({
 
           case "call-declined":
             if (call && (call.status === "calling" || call.status === "connecting") && call.partnerId === data.calleeId) {
-              toast.error("Call declined by user", { style: TOAST.ERROR });
+              notification.error("Call declined by user");
               soundsRef.current?.playEndCall();
               cleanupCall();
             }
@@ -165,7 +165,7 @@ export function CallProvider({
 
           case "call-busy":
             if (call && call.status === "calling" && data.targetCallerId === currentUserId) {
-              toast.error("User is currently busy on another call", { style: TOAST.ERROR });
+              notification.error("User is currently busy on another call");
               soundsRef.current?.playEndCall();
               logCall(call.conversationId, "📞 Missed call (Busy)");
               cleanupCall();
@@ -191,7 +191,7 @@ export function CallProvider({
 
           case "call-ended":
             if (call && call.partnerId === data.senderId) {
-              toast("Call ended", { style: TOAST.SUCCESS });
+              notification.success("Call ended");
               soundsRef.current?.playEndCall();
               cleanupCall();
             }
@@ -221,11 +221,11 @@ export function CallProvider({
     if (activeCall.status === "calling" || activeCall.status === "incoming") {
       timeoutId = setTimeout(() => {
         if (activeCall.status === "calling") {
-          toast.error("No answer", { style: TOAST.ERROR });
+          notification.error("No answer");
           sendSignal({ type: "call-ended", senderId: currentUserId });
           logCall(activeCall.conversationId, activeCall.isVideo ? "📞 Missed video call" : "📞 Missed voice call");
         } else if (activeCall.status === "incoming") {
-          toast("Missed call", { style: TOAST.SUCCESS });
+          notification.success("Missed call");
           // outgoingChannelRef is null for an unanswered call — use a temp channel to notify caller
           const partnerId = activeCall.partnerId;
           const tempCh = supabase.current.channel(`call-lobby:${partnerId}`);
@@ -384,7 +384,7 @@ export function CallProvider({
               setActiveCall((prev) => (prev ? { ...prev, status: "connected" } : null));
             }
             if (pc.iceConnectionState === "failed") {
-              toast.error("WebRTC Connection Failed (Firewall/NAT issue)");
+              notification.error("WebRTC Connection Failed (Firewall/NAT issue)");
               sendSignal({ type: "call-ended", senderId: currentUserId });
               cleanupCall();
             }
@@ -447,11 +447,11 @@ export function CallProvider({
     } catch (err: any) {
       console.error("Call initiation failed:", err);
       if (err.name === "NotAllowedError") {
-        toast.error("Camera/microphone permissions were denied.", { style: TOAST.ERROR });
+        notification.error("Camera/microphone permissions were denied.");
       } else if (err.name === "NotFoundError") {
-        toast.error("No hardware input devices found.", { style: TOAST.ERROR });
+        notification.error("No hardware input devices found.");
       } else {
-        toast.error("Could not access devices.", { style: TOAST.ERROR });
+        notification.error("Could not access devices.");
       }
       cleanupCall();
     }
@@ -543,7 +543,7 @@ export function CallProvider({
               setActiveCall((prev) => (prev ? { ...prev, status: "connected" } : null));
             }
             if (pc.iceConnectionState === "failed") {
-              toast.error("WebRTC Connection Failed (Firewall/NAT issue)");
+              notification.error("WebRTC Connection Failed (Firewall/NAT issue)");
               sendSignal({ type: "call-ended", senderId: currentUserId });
               cleanupCall();
             }
@@ -613,9 +613,9 @@ export function CallProvider({
     } catch (err: any) {
       console.error("Accepting call failed:", err);
       if (err.name === "NotAllowedError") {
-        toast.error("Could not access camera/microphone permissions.", { style: TOAST.ERROR });
+        notification.error("Could not access camera/microphone permissions.");
       } else {
-        toast.error("WebRTC connection failed.", { style: TOAST.ERROR });
+        notification.error("WebRTC connection failed.");
       }
       declineCall();
     }

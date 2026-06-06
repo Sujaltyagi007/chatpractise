@@ -10,8 +10,7 @@ import { updateProfile, validateUsername } from "@/lib/actions/profile";
 import { changePassword } from "@/lib/actions/auth";
 import { signOut } from "@/lib/actions/auth";
 import DangerZone from "./danger-zone";
-import { toast } from "sonner";
-import { TOAST } from "@/lib/utils";
+import { useNotification } from "@/lib/hooks/use-notification";
 
 interface Profile {
   id: string;
@@ -41,6 +40,7 @@ function SaveButton({ label = "Save Changes" }: { label?: string }) {
 // ─── Profile Tab ─────────────────────────────────────────────────────────────
 
 function ProfileTab({ profile }: { profile: Profile }) {
+  const notification = useNotification();
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatarUrl);
   const [bio, setBio] = useState(profile.bio ?? "");
   const [username, setUsername] = useState(profile.username);
@@ -60,11 +60,11 @@ function ProfileTab({ profile }: { profile: Profile }) {
 
   useEffect(() => {
     if (state.success) {
-      toast.success("Profile updated successfully!", { style: TOAST.SUCCESS });
+      notification.success("Profile updated successfully!");
     } else if (state.error) {
-      toast.error(state.error, { style: TOAST.ERROR });
+      notification.error(state.error);
     }
-  }, [state.success, state.error]);
+  }, [state.success, state.error, notification]);
 
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -222,6 +222,7 @@ function ProfileTab({ profile }: { profile: Profile }) {
 // ─── Security Tab ─────────────────────────────────────────────────────────────
 
 function SecurityTab() {
+  const notification = useNotification();
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -237,11 +238,11 @@ function SecurityTab() {
 
   useEffect(() => {
     if (state.success) {
-      toast.success("Password changed successfully!", { style: TOAST.SUCCESS });
+      notification.success("Password changed successfully!");
     } else if (state.error) {
-      toast.error(state.error, { style: TOAST.ERROR });
+      notification.error(state.error);
     }
-  }, [state.success, state.error]);
+  }, [state.success, state.error, notification]);
 
   return (
     <form action={formAction} className="space-y-5">

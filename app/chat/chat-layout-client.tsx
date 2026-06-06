@@ -11,8 +11,7 @@ import type { ConversationSummary, CurrentUser } from "@/lib/types/chat";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { toast } from "sonner";
-import { TOAST } from "@/lib/utils";
+import { useNotification } from "@/lib/hooks/use-notification";
 
 interface ChatLayoutClientProps {
   profile: CurrentUser;
@@ -25,12 +24,15 @@ export default function ChatLayoutClient({ profile, conversations: initialConver
   const [conversations, setConversations] = useState(initialConversations);
   const pathname = usePathname();
   const router = useRouter();
+  const notification = useNotification();
 
   const totalUnreadCount = conversations.reduce((acc, c) => acc + (c.unreadCount ?? 0), 0);
 
-  // Track latest conversations state in a mutable ref to access it cleanly in the event listener callback
   const conversationsRef = useRef(conversations);
   conversationsRef.current = conversations;
+
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   const isConversationPage = pathname.match(/^\/chat\/[a-zA-Z0-9-]+$/);
 
@@ -53,24 +55,23 @@ export default function ChatLayoutClient({ profile, conversations: initialConver
     const messageChannel = supabase.channel(`sidebar-realtime-messages_${Math.random().toString(36).substring(2, 9)}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'Message', }, (payload) => {
       const newMessage = payload.new as any;
 
-      // Retrieve the current conversations using the ref
+      // Retrieve the current conversations and pathname using refs
       const currentConversations = conversationsRef.current;
       const conv = currentConversations.find(c => c.id === newMessage.conversationId);
 
-      if (conv && newMessage.senderId !== profile.id && pathname !== `/chat/${newMessage.conversationId}`) {
+      if (conv && newMessage.senderId !== profile.id && pathnameRef.current !== `/chat/${newMessage.conversationId}`) {
         const senderMember = conv.members.find(m => m.userId === newMessage.senderId);
         const senderName = senderMember?.user.fullName || senderMember?.user.username || "Someone";
         const chatName = conv.type === "GROUP" ? ` in ${conv.name || "Group"}` : "";
 
-        toast.success(`New message from ${senderName}${chatName}`, {
+        notification.success(`New message from ${senderName}${chatName}`, {
           description: newMessage.content || "Sent an attachment",
           action: {
             label: "View",
             onClick: () => {
               router.push(`/chat/${newMessage.conversationId}`);
             }
-          },
-          style: TOAST.SUCCESS
+          }
         });
       }
 
@@ -80,7 +81,7 @@ export default function ChatLayoutClient({ profile, conversations: initialConver
 
         const currentConv = prev[idx];
         const senderMember = currentConv.members.find(m => m.userId === newMessage.senderId);
-        const isCurrentActive = pathname === `/chat/${newMessage.conversationId}`;
+        const isCurrentActive = pathnameRef.current === `/chat/${newMessage.conversationId}`;
         const isIncoming = newMessage.senderId !== profile.id;
 
         const updatedConv = {
@@ -132,18 +133,13 @@ export default function ChatLayoutClient({ profile, conversations: initialConver
   return (
     <PresenceProvider currentUserId={profile.id}>
       <CallProvider currentUser={profile}>
-        <div className="flex h-screen bg-stone-50 dark:bg-[#070709] overflow-hidden font-sans text-white">
-          <div className={`
-            shrink-0 border-r border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900/40 backdrop-blur-md h-full
-            ${isConversationPage ? "hidden md:flex md:flex-col w-72 xl:w-80" : "flex flex-col w-full md:w-72 xl:w-80 animate-sidebar-open"}
-          `}>
+        <div className="flex h-screen bg-stone-50 dark:bg-[radial-gradient(circle_at_center,#0f1123_0%,#070709_100%)] overflow-hidden font-sans text-white">
+          <div className={`shrink-0 border-r border-stone-200 dark:border-white/5 bg-white dark:bg-[#0c0c12]/60 backdrop-blur-lg h-full
+            ${isConversationPage ? "hidden md:flex md:flex-col w-72 xl:w-80" : "flex flex-col w-full md:w-72 xl:w-80 animate-sidebar-open"} `}>
             <ChatSidebar currentUser={profile} conversations={conversations} />
           </div>
 
-          <div className={`
-            flex-1 flex flex-col min-w-0 h-full relative
-            ${isConversationPage ? "flex" : "hidden md:flex"}
-          `}>
+          <div className={`flex-1 flex flex-col min-w-0 h-full relative ${isConversationPage ? "flex" : "hidden md:flex"}`}>
             <div className="flex-1 min-h-0 flex flex-col">{children}</div>
           </div>
         </div>

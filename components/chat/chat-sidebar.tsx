@@ -21,8 +21,7 @@ import NewConversationDialog from "@/components/chat/new-conversation-dialog";
 import FriendRequestsButton from "@/components/chat/friend-requests-button";
 import { NoConversationsEmptyState } from "@/components/chat/empty-states";
 import type { ConversationSummary, CurrentUser } from "@/lib/types/chat";
-import { toast } from "sonner";
-import { TOAST } from "@/lib/utils";
+import { useNotification } from "@/lib/hooks/use-notification";
 import { hideConversation } from "@/lib/actions/settings";
 import { getConversationDisplay, formatMessageTime, getLastMessagePreview, getInitials } from "@/lib/chat-utils";
 
@@ -35,6 +34,7 @@ interface ChatSidebarProps {
 export default function ChatSidebar({ currentUser, conversations, onConversationSelect }: ChatSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const notification = useNotification();
   const [searchQuery, setSearchQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -52,7 +52,7 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
     <>
       <div className="flex flex-col h-full overflow-hidden">
         {/* User Header */}
-        <div className="p-4 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between shrink-0">
+        <div className="p-4 border-b border-stone-200 dark:border-white/5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <Avatar className="h-9 w-9 shrink-0 ring-2 ring-indigo-500/20">
               <AvatarImage src={currentUser.avatarUrl ?? ""} />
@@ -76,7 +76,7 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-stone-500 hover:text-stone-950 dark:hover:text-white shrink-0"
+                  className="text-stone-500 hover:text-stone-950 dark:hover:text-white shrink-0 hover:scale-110 active:scale-95 transition-all duration-150"
                   aria-label="Settings menu"
                 >
                   <Settings className="h-4 w-4" />
@@ -86,7 +86,7 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-48 bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800"
+              className="w-48 bg-white dark:bg-[#0c0c12]/95 backdrop-blur-xl border-stone-200 dark:border-white/5"
             >
               <DropdownMenuItem
                 onClick={() => router.push("/profile")}
@@ -126,7 +126,7 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
               placeholder="Search conversations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 h-8 text-xs bg-stone-50 dark:bg-stone-950 border-stone-200 dark:border-stone-800"
+              className="pl-8 h-8 text-xs bg-stone-50 dark:bg-white/5 border-stone-200 dark:border-white/5 focus-visible:ring-indigo-500/50"
             />
           </div>
         </div>
@@ -159,8 +159,8 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
                   className={`
                     group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-150 cursor-pointer
                     ${isActive
-                      ? "bg-indigo-50 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-50"
-                      : "hover:bg-stone-50 dark:hover:bg-stone-800/50 text-stone-700 dark:text-stone-300"
+                      ? "bg-indigo-50 dark:bg-indigo-600/15 text-indigo-950 dark:text-indigo-200 border-l-2 border-indigo-500 rounded-l-none"
+                      : "hover:bg-stone-50 dark:hover:bg-white/5 text-stone-700 dark:text-stone-300"
                     }
                   `}
                 >
@@ -197,13 +197,13 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
                             if (confirm(`Are you sure you want to delete the conversation with ${display.name}?`)) {
                               const res = await hideConversation(conv.id);
                               if (res.success) {
-                                toast.success("Conversation deleted", { style: TOAST.SUCCESS });
+                                notification.success("Conversation deleted");
                                 if (pathname === `/chat/${conv.id}`) {
                                   router.push("/chat");
                                 }
                                 router.refresh();
                               } else {
-                                toast.error(res.error ?? "Failed to delete conversation", { style: TOAST.ERROR });
+                                notification.error(res.error ?? "Failed to delete conversation");
                               }
                             }
                           }}
@@ -225,10 +225,10 @@ export default function ChatSidebar({ currentUser, conversations, onConversation
         </ScrollArea>
 
         {/* New Conversation Button */}
-        <div className="p-3 border-t border-stone-200 dark:border-stone-800 shrink-0">
+        <div className="p-3 border-t border-stone-200 dark:border-white/5 shrink-0">
           <Button
             onClick={() => setDialogOpen(true)}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-sm h-9"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] text-white gap-2 text-sm h-9 transition-all duration-150"
           >
             <Plus className="h-4 w-4" />
             New Message

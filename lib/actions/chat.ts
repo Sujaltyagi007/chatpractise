@@ -321,6 +321,12 @@ export async function getMessages(
           userId: true,
         },
       },
+      reactions: {
+        select: {
+          userId: true,
+          emoji: true,
+        },
+      },
     },
   });
 
@@ -395,6 +401,12 @@ export async function sendMessage(
             fullName: true,
             username: true,
             avatarUrl: true,
+          },
+        },
+        reactions: {
+          select: {
+            userId: true,
+            emoji: true,
           },
         },
       },
@@ -649,4 +661,45 @@ export async function cancelFriendRequest(requestId: string) {
   });
 
   return { success: true };
+}
+
+export async function toggleMessageReaction(
+  messageId: string,
+  emoji: string
+): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { success: false, error: "Not authenticated" };
+
+  try {
+    const existing = await prisma.reaction.findUnique({
+      where: {
+        messageId_userId_emoji: {
+          messageId,
+          userId: user.id,
+          emoji,
+        },
+      },
+    });
+
+    if (existing) {
+      await prisma.reaction.delete({
+        where: { id: existing.id },
+      });
+    } else {
+      await prisma.reaction.create({
+        data: {
+          messageId,
+          userId: user.id,
+          emoji,
+        },
+      });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("toggleMessageReaction error:", error);
+    return { success: false, error: "Failed to toggle reaction" };
+  }
 }
