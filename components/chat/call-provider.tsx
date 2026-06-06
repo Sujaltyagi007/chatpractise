@@ -1,177 +1,16 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from "react";
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { sendMessage } from "@/lib/actions/chat";
 import { toast } from "sonner";
 import { TOAST } from "@/lib/utils";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-class CallSounds {
-  private ctx: AudioContext | null = null;
-  private ringbackInterval: any = null;
-  private ringtoneInterval: any = null;
-
-  private initCtx() {
-    if (!this.ctx) {
-      this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    if (this.ctx.state === "suspended") {
-      this.ctx.resume();
-    }
-  }
-
-  // Play outgoing ringing sound (ring-ring)
-  playRingback() {
-    this.stop();
-    this.initCtx();
-    if (!this.ctx) return;
-
-    const playTone = () => {
-      if (!this.ctx) return;
-      const osc1 = this.ctx.createOscillator();
-      const osc2 = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-
-      osc1.frequency.value = 440;
-      osc2.frequency.value = 480;
-
-      gain.gain.setValueAtTime(0, this.ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.08, this.ctx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.08, this.ctx.currentTime + 1.8);
-      gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 2.0);
-
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(this.ctx.destination);
-
-      osc1.start();
-      osc2.start();
-      osc1.stop(this.ctx.currentTime + 2.0);
-      osc2.stop(this.ctx.currentTime + 2.0);
-    };
-
-    playTone();
-    this.ringbackInterval = setInterval(playTone, 4000);
-  }
-
-  // Play incoming ringtone (melodic alert)
-  playRingtone() {
-    this.stop();
-    this.initCtx();
-    if (!this.ctx) return;
-
-    const playTone = () => {
-      if (!this.ctx) return;
-      const now = this.ctx.currentTime;
-
-      const playBeep = (time: number, freq: number) => {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.12, time + 0.05);
-        gain.gain.setValueAtTime(0.12, time + 0.25);
-        gain.gain.linearRampToValueAtTime(0, time + 0.3);
-
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start(time);
-        osc.stop(time + 0.3);
-      };
-
-      playBeep(now, 850);
-      playBeep(now + 0.35, 950);
-    };
-
-    playTone();
-    this.ringtoneInterval = setInterval(playTone, 1800);
-  }
-
-  // Play hang-up descending beep
-  playEndCall() {
-    this.stop();
-    this.initCtx();
-    if (!this.ctx) return;
-
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.frequency.setValueAtTime(320, now);
-    osc.frequency.exponentialRampToValueAtTime(80, now + 0.35);
-
-    gain.gain.setValueAtTime(0.15, now);
-    gain.gain.linearRampToValueAtTime(0, now + 0.35);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start();
-    osc.stop(now + 0.35);
-  }
-
-  stop() {
-    if (this.ringbackInterval) {
-      clearInterval(this.ringbackInterval);
-      this.ringbackInterval = null;
-    }
-    if (this.ringtoneInterval) {
-      clearInterval(this.ringtoneInterval);
-      this.ringtoneInterval = null;
-    }
-  }
-}
-
-// ==========================================
-// 2. TYPES & CONTEXT INTERFACES
-// ==========================================
-interface CallState {
-  status: "idle" | "calling" | "incoming" | "connecting" | "connected";
-  partnerId: string;
-  partnerName: string;
-  partnerAvatar?: string;
-  partnerUsername: string;
-  isVideo: boolean;
-  conversationId: string;
-}
-
-interface CallContextType {
-  initiateCall: (
-    targetUserId: string,
-    targetName: string,
-    targetAvatarUrl?: string,
-    targetUsername?: string,
-    isVideo?: boolean,
-    conversationId?: string
-  ) => void;
-  activeCall: CallState | null;
-  declineCall: () => void;
-  acceptCall: () => void;
-  endCall: () => void;
-  toggleMute: () => void;
-  toggleCamera: () => void;
-  isMuted: boolean;
-  isCamOff: boolean;
-}
+import { CallSounds } from "./call-sounds";
+import { CallState, CallContextType, iceConfiguration } from "./call-types";
+import { CallOverlay } from "./call-overlay";
 
 const CallContext = createContext<CallContextType | undefined>(undefined);
 
-// Free, stable public STUN servers provided by Google
-const iceConfiguration: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-  ],
-};
-
-// ==========================================
-// 3. MAIN PROVIDER COMPONENT
-// ==========================================
 export function CallProvider({
   children,
   currentUser,
@@ -212,8 +51,24 @@ export function CallProvider({
   // Initialize sounds class on mount
   useEffect(() => {
     soundsRef.current = new CallSounds();
+
+    // Auto-unlock/initialize AudioContext on first user interaction
+    const unlockAudio = () => {
+      soundsRef.current?.initCtx();
+      window.removeEventListener("click", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+      window.removeEventListener("touchstart", unlockAudio);
+    };
+
+    window.addEventListener("click", unlockAudio);
+    window.addEventListener("keydown", unlockAudio);
+    window.addEventListener("touchstart", unlockAudio);
+
     return () => {
       soundsRef.current?.stop();
+      window.removeEventListener("click", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+      window.removeEventListener("touchstart", unlockAudio);
     };
   }, []);
 
@@ -319,17 +174,16 @@ export function CallProvider({
           case "ice-candidate":
             if (call && call.partnerId === data.senderId) {
               const pc = peerConnectionRef.current;
-              if (pc) {
-                if (pc.remoteDescription) {
-                  try {
-                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                  } catch (e) {
-                    console.error("Error adding WebRTC candidate:", e);
-                  }
-                } else {
-                  // Queue candidates if they arrive before setRemoteDescription executes
-                  iceQueueRef.current.push(data.candidate);
+              if (pc && pc.remoteDescription) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (e) {
+                  console.error("Error adding WebRTC candidate:", e);
                 }
+              } else {
+                // Queue candidates if they arrive before setRemoteDescription executes
+                // OR before the peer connection is even created (during the ringing phase)
+                iceQueueRef.current.push(data.candidate);
               }
             }
             break;
@@ -384,18 +238,7 @@ export function CallProvider({
     };
   }, [activeCall, currentUserId]);
 
-  // Callback refs to cleanly mount and bind HTML5 video tags dynamically
-  const localVideoRef = useCallback((node: HTMLVideoElement | null) => {
-    if (node) {
-      node.srcObject = localStream;
-    }
-  }, [localStream]);
-
-  const remoteVideoRef = useCallback((node: HTMLVideoElement | null) => {
-    if (node) {
-      node.srcObject = remoteStream;
-    }
-  }, [remoteStream]);
+  // Removed localVideoRef and remoteVideoRef as they are now handled internally by CallOverlay
 
   // Log call activity as a message in the database chat history
   const logCall = useCallback(async (conversationId: string, content: string) => {
@@ -506,6 +349,14 @@ export function CallProvider({
             pc.addTrack(track, stream);
           });
 
+          // Log ICE state to debug local connection issues
+          pc.oniceconnectionstatechange = () => {
+            console.log("Caller ICE State:", pc.iceConnectionState);
+            if (pc.iceConnectionState === "failed") {
+              toast.error("WebRTC Connection Failed (Firewall/NAT issue)");
+            }
+          };
+
           // Transmit ICE candidates to partner
           pc.onicecandidate = (event) => {
             if (event.candidate) {
@@ -521,11 +372,20 @@ export function CallProvider({
             }
           };
 
-          // Receive remote video/audio track
+          // Receive remote video/audio track robustly
           pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-              setRemoteStream(event.streams[0]);
-            }
+            setRemoteStream((prevStream) => {
+              if (prevStream) {
+                // If stream exists, create a fresh one with all tracks to force React to update the ref
+                const tracks = prevStream.getTracks();
+                if (!tracks.includes(event.track)) {
+                  return new MediaStream([...tracks, event.track]);
+                }
+                return prevStream;
+              }
+              // Initialize with the first received track
+              return new MediaStream([event.track]);
+            });
           };
 
           // Generate SDP offer and broadcast to partner
@@ -652,11 +512,20 @@ export function CallProvider({
             }
           };
 
-          // Receive remote video/audio track
+          // Receive remote video/audio track robustly
           pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-              setRemoteStream(event.streams[0]);
-            }
+            setRemoteStream((prevStream) => {
+              if (prevStream) {
+                // If stream exists, create a fresh one with all tracks to force React to update the ref
+                const tracks = prevStream.getTracks();
+                if (!tracks.includes(event.track)) {
+                  return new MediaStream([...tracks, event.track]);
+                }
+                return prevStream;
+              }
+              // Initialize with the first received track
+              return new MediaStream([event.track]);
+            });
           };
 
           // Apply received SDP Offer description
@@ -752,209 +621,19 @@ export function CallProvider({
     >
       {children}
 
-      {/* Premium Glassmorphic Call UI Overlay */}
       {activeCall && activeCall.status !== "idle" && (
-        <div className="fixed inset-0 z-9999 flex flex-col items-center justify-center bg-black/80 backdrop-blur-xl animate-in fade-in duration-300">
-          
-          {/* Header Metadata */}
-          <div className="absolute top-6 left-6 flex items-center gap-2 text-stone-400 text-xs tracking-wider uppercase font-semibold">
-            {activeCall.isVideo ? (
-              <Video className="h-4.5 w-4.5 text-blue-500" />
-            ) : (
-              <Phone className="h-4.5 w-4.5 text-green-500" />
-            )}
-            <span>{activeCall.isVideo ? "Video Call" : "Voice Call"}</span>
-          </div>
-
-          {/* Central Workspace */}
-          <div className="flex flex-col items-center justify-center flex-1 w-full max-w-lg px-6">
-            
-            {/* Outgoing Ringing / Incoming Call / Connecting States */}
-            {(activeCall.status === "calling" || activeCall.status === "incoming" || activeCall.status === "connecting") && (
-              <div className="flex flex-col items-center text-center animate-in zoom-in-95 duration-200">
-                <div className="relative mb-6">
-                  {(activeCall.status === "calling" || activeCall.status === "incoming") && (
-                    <>
-                      <div className="absolute inset-0 rounded-full bg-blue-500/20 animate-ping duration-1000" />
-                      <div className="absolute -inset-4 rounded-full bg-blue-500/10 animate-pulse duration-1500" />
-                    </>
-                  )}
-                  <Avatar className="h-28 w-28 border-2 border-stone-850 shadow-2xl">
-                    <AvatarImage src={activeCall.partnerAvatar ?? ""} />
-                    <AvatarFallback className="bg-stone-900 text-stone-300 text-3xl font-semibold">
-                      {activeCall.partnerName.substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-                
-                <h2 className="text-2xl font-bold text-white mb-2">{activeCall.partnerName}</h2>
-                
-                <p className="text-stone-400 text-sm font-medium flex items-center gap-1.5">
-                  {activeCall.status === "calling" && "Calling..."}
-                  {activeCall.status === "incoming" && "Incoming call..."}
-                  {activeCall.status === "connecting" && (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                      Connecting secure line...
-                    </>
-                  )}
-                </p>
-              </div>
-            )}
-
-            {/* Video Streams Layout (CONNECTED VIDEO STATE) */}
-            {activeCall.status === "connected" && activeCall.isVideo && (
-              <div className="relative w-full h-[60vh] md:h-[65vh] rounded-3xl overflow-hidden bg-stone-950 border border-stone-800 shadow-2xl flex items-center justify-center">
-                
-                {/* Remote Stream Video */}
-                {remoteStream ? (
-                  <video
-                    ref={remoteVideoRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-3 text-stone-500 text-sm">
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                    <span>Waiting for stream connection...</span>
-                  </div>
-                )}
-
-                {/* Local Camera (PIP Container) */}
-                {localStream && (
-                  <div className="absolute top-4 right-4 w-32 md:w-40 aspect-video rounded-xl overflow-hidden bg-stone-900 border border-white/10 shadow-lg z-10">
-                    {isCamOff ? (
-                      <div className="w-full h-full flex items-center justify-center bg-stone-900 text-stone-500">
-                        <VideoOff className="h-5 w-5" />
-                      </div>
-                    ) : (
-                      <video
-                        ref={localVideoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover scale-x-[-1]"
-                      />
-                    )}
-                  </div>
-                )}
-
-                {/* Partner Name Label */}
-                <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/5 text-xs text-white">
-                  {activeCall.partnerName}
-                </div>
-              </div>
-            )}
-
-            {/* Audio Stream Layout (CONNECTED AUDIO STATE) */}
-            {activeCall.status === "connected" && !activeCall.isVideo && (
-              <div className="flex flex-col items-center text-center py-10 animate-in zoom-in-95 duration-200">
-                <div className="relative mb-6">
-                  <div className="absolute -inset-3 rounded-full bg-green-500/10 animate-pulse duration-1000" />
-                  <Avatar className="h-32 w-32 border-2 border-stone-850 shadow-2xl">
-                    <AvatarImage src={activeCall.partnerAvatar ?? ""} />
-                    <AvatarFallback className="bg-stone-900 text-stone-300 text-4xl font-semibold">
-                      {activeCall.partnerName.substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                </div>
-                
-                <h2 className="text-2xl font-bold text-white mb-2">{activeCall.partnerName}</h2>
-                <p className="text-green-500 text-sm font-semibold tracking-wide uppercase">Active Call</p>
-                
-                {/* Audio elements to play remote audio track */}
-                {remoteStream && (
-                  <video
-                    ref={remoteVideoRef}
-                    autoPlay
-                    playsInline
-                    className="hidden"
-                  />
-                )}
-                {localStream && (
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="hidden"
-                  />
-                )}
-              </div>
-            )}
-
-          </div>
-
-          {/* Action Control Panel */}
-          <div className="pb-16 pt-6 w-full flex justify-center px-6">
-            
-            {/* Incoming Ringing Actions */}
-            {activeCall.status === "incoming" ? (
-              <div className="flex items-center gap-6 animate-in slide-in-from-bottom-6 duration-200">
-                <button
-                  onClick={declineCall}
-                  className="h-16 w-16 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
-                  title="Decline"
-                >
-                  <PhoneOff className="h-6 w-6" />
-                </button>
-                <button
-                  onClick={acceptCall}
-                  className="h-16 w-16 rounded-full bg-green-600 hover:bg-green-500 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 glow-blue-hover transition-all cursor-pointer"
-                  title="Accept"
-                >
-                  <Phone className="h-6 w-6" />
-                </button>
-              </div>
-            ) : (
-              
-              /* Active Call Action Controls */
-              <div className="flex items-center gap-5 bg-stone-900/80 backdrop-blur-md px-6 py-4 rounded-full border border-stone-800 shadow-xl max-w-md w-full justify-around animate-in slide-in-from-bottom-8 duration-200">
-                
-                {/* Mute Mic */}
-                <button
-                  onClick={toggleMute}
-                  disabled={activeCall.status === "connecting"}
-                  className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-                    isMuted
-                      ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
-                      : "bg-stone-800 text-stone-200 hover:bg-stone-750"
-                  }`}
-                  title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
-                >
-                  {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-                </button>
-
-                {/* Camera Toggle */}
-                {activeCall.isVideo && (
-                  <button
-                    onClick={toggleCamera}
-                    disabled={activeCall.status === "connecting"}
-                    className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-                      isCamOff
-                        ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
-                        : "bg-stone-800 text-stone-200 hover:bg-stone-750"
-                    }`}
-                    title={isCamOff ? "Turn Camera On" : "Turn Camera Off"}
-                  >
-                    {isCamOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
-                  </button>
-                )}
-
-                {/* Hang Up */}
-                <button
-                  onClick={endCall}
-                  className="h-12 w-12 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
-                  title="Hang Up"
-                >
-                  <PhoneOff className="h-5 w-5" />
-                </button>
-
-              </div>
-            )}
-          </div>
-        </div>
+        <CallOverlay
+          activeCall={activeCall}
+          isMuted={isMuted}
+          isCamOff={isCamOff}
+          localStream={localStream}
+          remoteStream={remoteStream}
+          declineCall={declineCall}
+          acceptCall={acceptCall}
+          endCall={endCall}
+          toggleMute={toggleMute}
+          toggleCamera={toggleCamera}
+        />
       )}
     </CallContext.Provider>
   );
