@@ -19,9 +19,10 @@ interface MessageListProps {
   hasMore: boolean;
   typingUsers: Record<string, string>;
   scrollViewportRef: React.RefObject<HTMLDivElement | null>;
-  topSentinelRef: React.RefObject<HTMLDivElement | null>;
+  topSentinelRef: React.Ref<HTMLDivElement>;
   bottomRef: React.RefObject<HTMLDivElement | null>;
   onReactionClick: (messageId: string, emoji: string) => void;
+  onUnsend: (messageId: string) => void;
 }
 
 export function MessageList({
@@ -36,6 +37,7 @@ export function MessageList({
   topSentinelRef,
   bottomRef,
   onReactionClick,
+  onUnsend,
 }: MessageListProps) {
   const onlineUsers = usePresence();
 
@@ -110,6 +112,7 @@ export function MessageList({
                 conversationType={conversation.type}
                 isDelivered={isDelivered}
                 onReactionClick={onReactionClick}
+                onUnsend={onUnsend}
               />
             );
           })

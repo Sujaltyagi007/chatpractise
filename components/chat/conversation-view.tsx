@@ -33,6 +33,7 @@ export default function ConversationView({
     connectionStatus,
     typingUsers,
     handleReactionClick,
+    handleUnsend,
     handleFileSelect,
     handleSend,
     handleInputChange,
@@ -60,6 +61,7 @@ export default function ConversationView({
         topSentinelRef={topSentinelRef}
         bottomRef={bottomRef}
         onReactionClick={handleReactionClick}
+        onUnsend={handleUnsend}
       />
 
       {/* Input Form Section */}

@@ -141,6 +141,7 @@ const conversationInclude = {
     select: {
       content: true,
       createdAt: true,
+      deletedAt: true,
       sender: { select: { fullName: true, username: true } },
     },
   },
@@ -204,8 +205,9 @@ export async function getUserConversations(): Promise<{
     })),
     lastMessage: c.messages[0]
       ? {
-        content: c.messages[0].content,
+        content: c.messages[0].deletedAt ? null : c.messages[0].content,
         createdAt: c.messages[0].createdAt,
+        deletedAt: c.messages[0].deletedAt,
         sender: c.messages[0].sender,
       }
       : null,
@@ -270,8 +272,9 @@ export async function getConversationById(conversationId: string): Promise<{
       })),
       lastMessage: row.messages[0]
         ? {
-          content: row.messages[0].content,
+          content: row.messages[0].deletedAt ? null : row.messages[0].content,
           createdAt: row.messages[0].createdAt,
+          deletedAt: row.messages[0].deletedAt,
           sender: row.messages[0].sender,
         }
         : null,
@@ -309,6 +312,7 @@ export async function getMessages(
       senderId: true,
       content: true,
       createdAt: true,
+      deletedAt: true,
       sender: {
         select: {
           fullName: true,
@@ -342,8 +346,14 @@ export async function getMessages(
   if (hasMore) messages.pop();
   messages.reverse();
 
-  const nextCursor = messages.length > 0 ? messages[0].id : undefined;
-  return { messages, hasMore, nextCursor };
+  // Mask content for unsent messages
+  const maskedMessages = messages.map(m => ({
+    ...m,
+    content: m.deletedAt ? null : m.content,
+  }));
+
+  const nextCursor = maskedMessages.length > 0 ? maskedMessages[0].id : undefined;
+  return { messages: maskedMessages, hasMore, nextCursor };
 }
 
 export async function sendMessage(
@@ -449,6 +459,38 @@ export async function markMessagesAsSeen(
   } catch (error) {
     console.error("markMessagesAsSeen error:", error);
     return { success: false, error: "Failed to mark messages as seen" };
+  }
+}
+
+export async function unsendMessage(messageId: string): Promise<{ success: boolean; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { success: false, error: "Not authenticated" };
+
+  try {
+    const message = await prisma.message.findUnique({
+      where: { id: messageId }
+    });
+
+    if (!message) return { success: false, error: "Message not found" };
+    if (message.senderId !== user.id) return { success: false, error: "Unauthorized" };
+    if (message.deletedAt) return { success: false, error: "Message already unsent" };
+
+    const timeDiffMs = new Date().getTime() - message.createdAt.getTime();
+    if (timeDiffMs > 15 * 60 * 1000) {
+      return { success: false, error: "Messages can only be unsent within 15 minutes of sending" };
+    }
+
+    await prisma.message.update({
+      where: { id: messageId },
+      data: { deletedAt: new Date() }
+    });
+
+    return { success: true };
+  } catch (err) {
+    console.error("Failed to unsend message:", err);
+    return { success: false, error: "Internal server error" };
   }
 }
 

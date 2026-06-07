@@ -64,10 +64,10 @@ export default function ChatLayoutClient({ profile, conversations: initialConver
         const senderName = senderMember?.user.fullName || senderMember?.user.username || "Someone";
         const chatName = conv.type === "GROUP" ? ` in ${conv.name || "Group"}` : "";
 
-        notification.success(`New message from ${senderName}${chatName}`, {
-          description: newMessage.content || "Sent an attachment",
+        notification.success(newMessage.content || "Sent an attachment", {
+          title: `${senderName}${chatName}`,
           action: {
-            label: "View",
+            label: "Reply",
             onClick: () => {
               router.push(`/chat/${newMessage.conversationId}`);
             }

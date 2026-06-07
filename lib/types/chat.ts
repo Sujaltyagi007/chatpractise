@@ -17,6 +17,7 @@ export interface ConversationMemberWithProfile {
 export interface LastMessage {
   content: string | null;
   createdAt: Date;
+  deletedAt?: Date | null;
   sender: {
     fullName: string | null;
     username: string;
@@ -49,6 +50,7 @@ export interface MessageDTO {
   senderId: string;
   content: string | null;
   createdAt: Date;
+  deletedAt?: Date | null;
   sender: {
     fullName: string | null;
     username: string;

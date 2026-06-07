@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } fr
 import { useRouter } from "next/navigation";
 import { useNotification } from "@/lib/hooks/use-notification";
 import { createClient } from "@/lib/supabase/client";
-import { sendMessage, markMessagesAsSeen, getMessages, toggleMessageReaction } from "@/lib/actions/chat";
+import { sendMessage, markMessagesAsSeen, getMessages, toggleMessageReaction, unsendMessage } from "@/lib/actions/chat";
 import type { ConversationSummary, CurrentUser, MessageDTO } from "@/lib/types/chat";
 import { usePresence } from "./presence-provider";
 
@@ -20,6 +20,7 @@ export interface DisplayMessage {
   isPending?: boolean;
   isSeen?: boolean;
   reactions?: Record<string, string>;
+  isUnsent?: boolean;
 }
 
 export function useConversation(conversation: ConversationSummary, currentUser: CurrentUser) {
@@ -37,7 +38,6 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const scrollViewportRef = useRef<HTMLDivElement>(null);
-  const topSentinelRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const [scrollAdjust, setScrollAdjust] = useState<{
@@ -79,7 +79,7 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
 
     async function loadInitial() {
       try {
-        const res = await getMessages(conversation.id, undefined, 20);
+        const res = await getMessages(conversation.id, undefined, 35);
         if (!active) return;
         if (res.messages) {
           const displayMsgs = res.messages.map(m => ({
@@ -92,6 +92,7 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
             time: new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             timestamp: new Date(m.createdAt).getTime(),
             isSeen: m.messageSeens?.some(seen => seen.userId !== currentUser.id) ?? false,
+            isUnsent: !!(m as any).deletedAt,
             reactions: m.reactions?.reduce((acc, r) => {
               acc[r.userId] = r.emoji;
               return acc;
@@ -144,6 +145,7 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
             time: new Date(newRecord.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
             timestamp: new Date(newRecord.createdAt).getTime(),
             isSeen: false,
+            isUnsent: !!newRecord.deletedAt,
           };
 
           setRealtimeMessages(prev => {
@@ -244,6 +246,15 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
           })
         );
       })
+      .on('broadcast', { event: 'message:unsent' }, (payload) => {
+        const { messageId } = payload.payload;
+        setRealtimeMessages(prev =>
+          prev.map(m => m.id === messageId ? { ...m, isUnsent: true, content: "" } : m)
+        );
+        setPaginatedMessages(prev =>
+          prev.map(m => m.id === messageId ? { ...m, isUnsent: true, content: "" } : m)
+        );
+      })
       .on('broadcast', { event: 'typing:start' }, (payload) => {
         const { userId, username } = payload.payload;
         if (userId === currentUser.id) return;
@@ -324,14 +335,6 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
 
     setIsLoadingMore(true);
 
-    const viewport = scrollViewportRef.current;
-    if (viewport) {
-      setScrollAdjust({
-        prevScrollHeight: viewport.scrollHeight,
-        prevScrollTop: viewport.scrollTop
-      });
-    }
-
     try {
       const res = await getMessages(conversation.id, currentOldestMsg.id);
       if (res.error) {
@@ -350,11 +353,21 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
           time: new Date(m.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
           timestamp: new Date(m.createdAt).getTime(),
           isSeen: m.messageSeens?.some(seen => seen.userId !== currentUser.id) ?? false,
+          isUnsent: !!(m as any).deletedAt,
           reactions: m.reactions?.reduce((acc, r) => {
             acc[r.userId] = r.emoji;
             return acc;
           }, {} as Record<string, string>) ?? {},
         }));
+
+        // Capture scroll measurements IMMEDIATELY before layout mutations to prevent drift during network latency
+        const viewport = scrollViewportRef.current;
+        if (viewport) {
+          setScrollAdjust({
+            prevScrollHeight: viewport.scrollHeight,
+            prevScrollTop: viewport.scrollTop
+          });
+        }
 
         setPaginatedMessages(prev => [...newDisplayMsgs, ...prev]);
         setHasMore(res.hasMore);
@@ -380,27 +393,29 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
   const loadMoreRef = useRef(loadMoreMessages);
   loadMoreRef.current = loadMoreMessages;
 
-  useEffect(() => {
-    const sentinel = topSentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMoreRef.current();
+  // Use a callback ref to handle the dynamic mounting/unmounting of the sentinel element
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const topSentinelRef = useCallback((node: HTMLDivElement | null) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    if (node) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0].isIntersecting) {
+            loadMoreRef.current();
+          }
+        },
+        {
+          root: scrollViewportRef.current,
+          threshold: 0.1,
         }
-      },
-      {
-        root: scrollViewportRef.current,
-        threshold: 0.1,
-      }
-    );
-
-    observer.observe(sentinel);
-    return () => {
-      observer.disconnect();
-    };
-  }, [conversation.id]);
+      );
+      observer.observe(node);
+      observerRef.current = observer;
+    }
+  }, []);
 
   useEffect(() => {
     if (mergedMessages.length === 0) return;
@@ -532,6 +547,29 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
     });
   }, [currentUser.id]);
 
+  const handleUnsend = useCallback(async (messageId: string) => {
+    // Optimistic UI update
+    setRealtimeMessages(prev =>
+      prev.map(m => m.id === messageId ? { ...m, isUnsent: true, content: "" } : m)
+    );
+    setPaginatedMessages(prev =>
+      prev.map(m => m.id === messageId ? { ...m, isUnsent: true, content: "" } : m)
+    );
+
+    // Broadcast
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'message:unsent',
+      payload: { messageId },
+    });
+
+    // API Call
+    const result = await unsendMessage(messageId);
+    if (!result.success) {
+      notification.error(result.error ?? "Failed to unsend message");
+    }
+  }, [notification]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -644,6 +682,7 @@ export function useConversation(conversation: ConversationSummary, currentUser: 
     connectionStatus,
     typingUsers,
     handleReactionClick,
+    handleUnsend,
     handleFileSelect,
     handleSend,
     handleInputChange,

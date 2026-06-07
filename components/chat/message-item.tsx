@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, CheckCheck } from "lucide-react";
+import { Check, CheckCheck, Trash2, Undo2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/chat-utils";
 import type { DisplayMessage } from "./use-conversation";
@@ -13,6 +13,7 @@ interface MessageItemProps {
   conversationType: "DIRECT" | "GROUP";
   isDelivered: boolean;
   onReactionClick: (messageId: string, emoji: string) => void;
+  onUnsend: (messageId: string) => void;
 }
 
 export function MessageItem({
@@ -21,8 +22,10 @@ export function MessageItem({
   conversationType,
   isDelivered,
   onReactionClick,
+  onUnsend,
 }: MessageItemProps) {
   const isMe = message.senderId === currentUser.id;
+  const canUnsend = isMe && !message.isUnsent && (Date.now() - message.timestamp < 15 * 60 * 1000);
 
   return (
     <div className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${message.isPending ? "opacity-90" : ""} animate-in slide-in-from-bottom-2 fade-in duration-200 ease-out`}>
@@ -45,9 +48,16 @@ export function MessageItem({
             </Avatar>
           </Link>
         )}
-        <div className={`relative px-4 py-2.5 rounded-2xl text-left text-sm shadow-sm leading-relaxed wrap-break-word whitespace-pre-wrap ${isMe ? "bg-linear-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white rounded-br-none shadow-md shadow-indigo-600/10" : "bg-white/5 border border-white/5 backdrop-blur-sm text-white rounded-bl-none"}`} >
-          {message.content}
-          {message.reactions && Object.keys(message.reactions).length > 0 && (
+        <div className={`relative px-4 py-2.5 rounded-2xl text-left text-sm shadow-sm leading-relaxed wrap-break-word whitespace-pre-wrap ${isMe ? "bg-linear-to-tr from-blue-600 via-indigo-600 to-violet-600 text-white rounded-br-none shadow-md shadow-indigo-600/10" : "bg-white/5 border border-white/5 backdrop-blur-sm text-white rounded-bl-none"} ${message.isUnsent ? "italic opacity-60 flex items-center gap-2" : ""}`} >
+          {message.isUnsent ? (
+            <>
+              <Undo2 className="w-4 h-4 opacity-70" />
+              This message was unsent
+            </>
+          ) : (
+            message.content
+          )}
+          {!message.isUnsent && message.reactions && Object.keys(message.reactions).length > 0 && (
             <div className={`absolute -bottom-2.5 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-stone-950/85 border border-white/10 backdrop-blur-md text-[10px] text-stone-300 shadow-md cursor-pointer hover:scale-105 transition-all select-none z-10 ${isMe ? "right-3" : "left-3"}`}
               onClick={(e) => {
                 e.stopPropagation();
@@ -70,13 +80,28 @@ export function MessageItem({
         </div>
 
         {/* Hover Actions Popover */}
-        <div className={`hidden group-hover:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-stone-950/90 border border-white/10 backdrop-blur-md shadow-lg absolute -top-7.5 z-20 transition-all before:absolute before:inset-x-0 before:h-3 before:-bottom-2 before:content-[""] ${isMe ? "right-0" : "left-11"}`}>
-          {["👍", "❤️", "😂", "😮", "😢", "🙏"].map((emoji) => (
-            <button key={emoji} type="button" onClick={() => { onReactionClick(message.id, emoji); }} className="hover:scale-125 active:scale-95 transition-all text-xs p-0.5 cursor-pointer">
-              {emoji}
-            </button>
-          ))}
-        </div>
+        {!message.isUnsent && (
+          <div className={`hidden group-hover:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-stone-950/90 border border-white/10 backdrop-blur-md shadow-lg absolute -top-7.5 z-20 transition-all before:absolute before:inset-x-0 before:h-3 before:-bottom-2 before:content-[""] ${isMe ? "right-0" : "left-11"}`}>
+            {["👍", "❤️", "😂", "😮", "😢", "🙏"].map((emoji) => (
+              <button key={emoji} type="button" onClick={() => { onReactionClick(message.id, emoji); }} className="hover:scale-125 active:scale-95 transition-all text-xs p-0.5 cursor-pointer">
+                {emoji}
+              </button>
+            ))}
+            {canUnsend && (
+              <>
+                <div className="w-px h-4 bg-white/10 mx-1"></div>
+                <button 
+                  type="button" 
+                  onClick={() => onUnsend(message.id)} 
+                  className="hover:scale-110 active:scale-95 transition-all p-1 cursor-pointer text-stone-400 hover:text-red-400"
+                  title="Unsend for everyone"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <span className={`text-[9px] text-stone-500 mt-1 flex items-center gap-1 ${isMe ? "mr-1.5" : "ml-11"}`}>

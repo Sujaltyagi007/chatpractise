@@ -96,7 +96,11 @@ export function CallOverlay({
       </div>
 
       {/* Central Workspace */}
-      <div className="flex flex-col items-center justify-center flex-1 w-full max-w-lg px-6">
+      <div className={`flex flex-col items-center justify-center flex-1 w-full px-6 transition-all duration-300 ${
+        activeCall.status === "connected" && activeCall.isVideo 
+          ? "max-w-5xl" 
+          : "max-w-lg"
+      }`}>
         {/* Outgoing Ringing / Incoming Call / Connecting States */}
         {(activeCall.status === "calling" ||
           activeCall.status === "incoming" ||
@@ -134,7 +138,7 @@ export function CallOverlay({
 
         {/* Video Streams Layout (CONNECTED VIDEO STATE) */}
         {activeCall.status === "connected" && activeCall.isVideo && (
-          <div className="relative w-full h-[60vh] md:h-[65vh] rounded-3xl overflow-hidden bg-stone-950 border border-stone-800 shadow-2xl flex items-center justify-center">
+          <div className="relative w-full aspect-video rounded-3xl overflow-hidden bg-stone-950 border border-stone-800 shadow-2xl flex items-center justify-center">
             {/* Remote Stream Video - UNMUTED so audio plays correctly */}
             {remoteStream ? (
               <video
@@ -152,9 +156,9 @@ export function CallOverlay({
 
             {/* Local Camera (PIP Container) */}
             {localStream && (
-              <div className="absolute top-4 right-4 w-32 md:w-40 aspect-video rounded-xl overflow-hidden bg-stone-900 border border-white/10 shadow-lg z-10">
+              <div className="absolute top-4 right-4 w-32 md:w-44 aspect-video rounded-2xl overflow-hidden bg-stone-900 border border-white/15 shadow-xl z-10 transition-all duration-300">
                 {isCamOff ? (
-                  <div className="w-full h-full flex items-center justify-center bg-stone-900 text-stone-500">
+                  <div className="w-full h-full flex items-center justify-center bg-stone-950 text-stone-600">
                     <VideoOff className="h-5 w-5" />
                   </div>
                 ) : (
@@ -203,7 +207,6 @@ export function CallOverlay({
                 style={{ position: "absolute", width: "1px", height: "1px", opacity: 0, pointerEvents: "none" }}
               />
             )}
-            {/* We do not need a hidden video tag for local audio stream */}
           </div>
         )}
       </div>
@@ -212,62 +215,82 @@ export function CallOverlay({
       <div className="pb-16 pt-6 w-full flex justify-center px-6">
         {/* Incoming Ringing Actions */}
         {activeCall.status === "incoming" ? (
-          <div className="flex items-center gap-6 animate-in slide-in-from-bottom-6 duration-200">
+          <div className="flex items-center gap-8 animate-in slide-in-from-bottom-6 duration-200">
             <button
               onClick={declineCall}
-              className="h-16 w-16 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
-              title="Decline"
+              className="flex flex-col items-center gap-2 group cursor-pointer"
             >
-              <PhoneOff className="h-6 w-6" />
+              <div className="h-14 w-14 rounded-full bg-red-655 hover:bg-red-555 text-white flex items-center justify-center shadow-lg group-hover:scale-105 active:scale-95 transition-all border border-red-500/10 bg-red-650 hover:bg-red-550 bg-red-600 hover:bg-red-550">
+                <PhoneOff className="h-5.5 w-5.5" />
+              </div>
+              <span className="text-xs font-semibold text-red-400 group-hover:text-red-350 tracking-wide">
+                Decline
+              </span>
             </button>
+
             <button
               onClick={acceptCall}
-              className="h-16 w-16 rounded-full bg-green-600 hover:bg-green-500 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 glow-blue-hover transition-all cursor-pointer"
-              title="Accept"
+              className="flex flex-col items-center gap-2 group cursor-pointer"
             >
-              <Phone className="h-6 w-6" />
+              <div className="h-14 w-14 rounded-full bg-green-655 hover:bg-green-555 text-white flex items-center justify-center shadow-lg group-hover:scale-105 active:scale-95 transition-all border border-green-500/10 bg-green-655 hover:bg-green-555 bg-green-600 hover:bg-green-550">
+                <Phone className="h-5.5 w-5.5" />
+              </div>
+              <span className="text-xs font-semibold text-green-400 group-hover:text-green-300 tracking-wide">
+                Accept
+              </span>
             </button>
           </div>
         ) : (
-          /* Active Call Action Controls */
-          <div className="flex items-center gap-5 bg-stone-900/80 backdrop-blur-md px-6 py-4 rounded-full border border-stone-800 shadow-xl max-w-md w-full justify-around animate-in slide-in-from-bottom-8 duration-200">
+          /* Zoom-Style Action Control Panel */
+          <div className="flex items-end justify-center gap-6 bg-[#18181a]/95 border border-white/10 px-8 py-3.5 rounded-2xl shadow-2xl max-w-sm w-full justify-around animate-in slide-in-from-bottom-8 duration-200">
             {/* Mute Mic */}
             <button
               onClick={toggleMute}
-              disabled={activeCall.status === "connecting"}
-              className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-                isMuted
-                  ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
-                  : "bg-stone-800 text-stone-200 hover:bg-stone-750"
-              }`}
-              title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+              className="flex flex-col items-center gap-1.5 group cursor-pointer"
             >
-              {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              <div className={`h-11 w-11 rounded-xl flex items-center justify-center transition-all ${
+                isMuted
+                  ? "bg-red-500/20 text-red-400 border border-red-500/30 group-hover:bg-red-500/30"
+                  : "bg-white/5 text-stone-300 group-hover:bg-white/10 border border-white/5"
+              }`}>
+                {isMuted ? <MicOff className="h-4.5 w-4.5" /> : <Mic className="h-4.5 w-4.5" />}
+              </div>
+              <span className="text-[10px] font-semibold text-stone-400 group-hover:text-stone-300 transition-colors tracking-wide">
+                {isMuted ? "Unmute" : "Mute"}
+              </span>
             </button>
 
             {/* Camera Toggle */}
             {activeCall.isVideo && (
               <button
                 onClick={toggleCamera}
-                disabled={activeCall.status === "connecting"}
-                className={`h-12 w-12 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-                  isCamOff
-                    ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
-                    : "bg-stone-800 text-stone-200 hover:bg-stone-750"
-                }`}
-                title={isCamOff ? "Turn Camera On" : "Turn Camera Off"}
+                className="flex flex-col items-center gap-1.5 group cursor-pointer"
               >
-                {isCamOff ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
+                <div className={`h-11 w-11 rounded-xl flex items-center justify-center transition-all ${
+                  isCamOff
+                    ? "bg-red-500/20 text-red-40 border border-red-500/30 group-hover:bg-red-500/30"
+                    : "bg-white/5 text-stone-300 group-hover:bg-white/10 border border-white/5"
+                }`}>
+                  {isCamOff ? <VideoOff className="h-4.5 w-4.5" /> : <Video className="h-4.5 w-4.5" />}
+                </div>
+                <span className="text-[10px] font-semibold text-stone-400 group-hover:text-stone-300 transition-colors tracking-wide">
+                  {isCamOff ? "Start Video" : "Stop Video"}
+                </span>
               </button>
             )}
 
-            {/* Hang Up */}
+            {/* Hang Up (Call Cut Button) */}
             <button
               onClick={endCall}
-              className="h-12 w-12 rounded-full bg-red-600 hover:bg-red-500 text-white flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
-              title="Hang Up"
+              className="flex flex-col items-center gap-1.5 group cursor-pointer"
             >
-              <PhoneOff className="h-5 w-5" />
+              <div className="h-11 px-5 rounded-xl bg-red-600 hover:bg-red-550 text-white flex items-center justify-center gap-2 shadow-md group-hover:scale-[1.02] active:scale-95 transition-all border border-red-500/20">
+                <PhoneOff className="h-4 w-4" />
+                <span className="text-xs font-bold uppercase tracking-wider">End</span>
+              </div>
+              <span className="text-[10px] font-semibold text-red-400/80 group-hover:text-red-450 transition-colors tracking-wide">
+                End Call
+              </span>
             </button>
           </div>
         )}
