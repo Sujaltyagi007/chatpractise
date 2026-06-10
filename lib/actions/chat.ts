@@ -670,7 +670,12 @@ export async function unfriend(targetUserId: string): Promise<{ success: boolean
       });
 
       if (conversation) {
-        // Delete the conversation, which will cascade delete messages and members
+        // Explicitly delete all messages (chats) first
+        await tx.message.deleteMany({
+          where: { conversationId: conversation.id },
+        });
+
+        // Delete the conversation
         await tx.conversation.delete({
           where: { id: conversation.id },
         });

@@ -12,6 +12,7 @@ import { getOrCreateDirectConversation, sendFriendRequest, acceptFriendRequest, 
 import { blockUser, unblockUser } from "@/lib/actions/settings";
 import type { Profile } from "@/lib/generated/prisma/client";
 import { formatLastSeen, getInitials } from "@/lib/chat-utils";
+import { broadcastFriendRequestChange } from "@/lib/realtime-service";
 
 interface PublicProfileCardProps {
   targetUser: Profile;
@@ -95,6 +96,7 @@ export default function PublicProfileCard({
       if (res.request) {
         setRequestId(res.request.id);
       }
+      broadcastFriendRequestChange(targetUser.id);
       router.refresh();
     });
   };
@@ -110,6 +112,7 @@ export default function PublicProfileCard({
       }
       setFriendshipStatus("NONE");
       setRequestId(undefined);
+      broadcastFriendRequestChange(targetUser.id);
       router.refresh();
     });
   };
@@ -124,6 +127,7 @@ export default function PublicProfileCard({
         return;
       }
       setFriendshipStatus("FRIENDS");
+      broadcastFriendRequestChange(targetUser.id);
       router.refresh();
     });
   };
@@ -139,6 +143,7 @@ export default function PublicProfileCard({
       }
       setFriendshipStatus("NONE");
       setRequestId(undefined);
+      broadcastFriendRequestChange(targetUser.id);
       router.refresh();
     });
   };
@@ -154,6 +159,7 @@ export default function PublicProfileCard({
       }
       setFriendshipStatus("NONE");
       setRequestId(undefined);
+      broadcastFriendRequestChange(targetUser.id);
       router.refresh();
     });
   };

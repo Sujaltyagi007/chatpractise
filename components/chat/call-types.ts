@@ -64,9 +64,8 @@ export async function fetchDynamicIceServers(): Promise<RTCConfiguration> {
       return { iceServers: stunServers };
     }
 
-    const response = await fetch(
-      `https://chatpractise.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`,
-      { signal: AbortSignal.timeout(5000) } // 5 second timeout
+    const response = await fetch(`https://chatpractise.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`,
+      { signal: AbortSignal.timeout(5000) }
     );
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

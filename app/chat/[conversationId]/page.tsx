@@ -8,13 +8,9 @@ interface Props {
 
 export default async function ConversationPage({ params }: Props) {
   const { conversationId } = await params;
-
   const { conversation, profile, error } = await getConversationById(conversationId);
-
   if (error === "Not authenticated") redirect("/sign-in");
   if (!conversation || !profile) notFound();
-
-  // Redirect to onboarding if profile is incomplete
   if (!profile.fullName) redirect("/onboarding");
 
   return (

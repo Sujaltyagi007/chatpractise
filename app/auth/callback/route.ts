@@ -15,6 +15,5 @@ export async function GET(request: Request) {
     }
   }
 
-  // Redirect to sign in with error message
   return NextResponse.redirect(`${origin}/sign-in?message=Authentication%20error.%20Please%20try%20again.`);
 }

@@ -131,13 +131,23 @@ export async function hideConversation(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: "Not authenticated" };
 
-  await prisma.conversationMember.update({
-    where: { conversationId_userId: { conversationId, userId: user.id } },
-    data: { isHidden: true },
-  });
+  try {
+    await prisma.$transaction([
+      prisma.message.deleteMany({
+        where: { conversationId },
+      }),
+      prisma.conversationMember.update({
+        where: { conversationId_userId: { conversationId, userId: user.id } },
+        data: { isHidden: true },
+      }),
+    ]);
 
-  revalidatePath("/chat");
-  return { success: true };
+    revalidatePath("/chat");
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to delete conversation chats:", error);
+    return { success: false, error: error.message || "Failed to delete conversation" };
+  }
 }
 
 export async function getArchivedConversations() {

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { searchUsers, sendFriendRequest, getOrCreateDirectConversation } from "@/lib/actions/chat";
 import type { ProfileSummary } from "@/lib/types/chat";
 import { getInitials } from "@/lib/chat-utils";
+import { broadcastFriendRequestChange } from "@/lib/realtime-service";
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -83,6 +84,10 @@ export default function NewConversationDialog({
       setCreating(null);
       return;
     }
+    
+    // Broadcast the friend request to target user in realtime
+    broadcastFriendRequestChange(user.id);
+    
     onOpenChange(false);
   }
 

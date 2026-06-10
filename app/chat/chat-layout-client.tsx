@@ -1,14 +1,9 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
-import { Menu, MessageSquare, User, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import ChatSidebar from "@/components/chat/chat-sidebar";
-import MobileSidebarDrawer from "@/components/chat/mobile-sidebar-drawer";
 import { PresenceProvider } from "@/components/chat/presence-provider";
 import { CallProvider } from "@/components/chat/call-provider";
 import type { ConversationSummary, CurrentUser } from "@/lib/types/chat";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useNotification } from "@/lib/hooks/use-notification";
@@ -121,11 +116,19 @@ export default function ChatLayoutClient({ profile, conversations: initialConver
         }
       })
       .subscribe();
+
+    const broadcastRequestsChannel = supabase.channel(`friend-requests:${profile.id}`)
+      .on('broadcast', { event: 'friend_request_change' }, () => {
+        router.refresh();
+      })
+      .subscribe();
+
     const memberChannel = supabase.channel(`sidebar-realtime-members-${profile.id}_${Math.random().toString(36).substring(2, 9)}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ConversationMember', filter: `userId=eq.${profile.id}` }, () => { router.refresh(); }).subscribe();
 
     return () => {
       supabase.removeChannel(messageChannel);
       supabase.removeChannel(outgoingRequestsChannel);
+      supabase.removeChannel(broadcastRequestsChannel);
       supabase.removeChannel(memberChannel);
     };
   }, [profile.id, router]);

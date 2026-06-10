@@ -9,6 +9,7 @@ import { getPendingFriendRequests, acceptFriendRequest, rejectFriendRequest } fr
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { getInitials } from "@/lib/chat-utils";
+import { broadcastFriendRequestChange } from "@/lib/realtime-service";
 
 interface RequestUser {
   id: string;
@@ -39,7 +40,16 @@ export default function FriendRequestsButton({ userId }: FriendRequestsButtonPro
   useEffect(() => {
     fetchRequests();
     const supabase = createClient();
-    const channel = supabase.channel(`friend_requests_incoming_${userId}_${Math.random().toString(36).substring(2, 9)}`)
+    
+    // Subscribe to custom broadcast channel for instant realtime notifications
+    const broadcastChannel = supabase.channel(`friend-requests:${userId}`)
+      .on('broadcast', { event: 'friend_request_change' }, () => {
+        fetchRequests();
+        router.refresh();
+      })
+      .subscribe();
+
+    const dbChannel = supabase.channel(`friend_requests_incoming_${userId}_${Math.random().toString(36).substring(2, 9)}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -54,7 +64,10 @@ export default function FriendRequestsButton({ userId }: FriendRequestsButtonPro
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(broadcastChannel);
+      supabase.removeChannel(dbChannel);
+    };
   }, [userId, router]);
 
   async function fetchRequests() {
@@ -68,7 +81,11 @@ export default function FriendRequestsButton({ userId }: FriendRequestsButtonPro
 
   async function handleAccept(id: string) {
     setProcessing(id);
+    const req = requests.find(r => r.id === id);
     await acceptFriendRequest(id);
+    if (req) {
+      broadcastFriendRequestChange(req.senderId);
+    }
     await fetchRequests();
     router.refresh();
     setProcessing(null);
@@ -76,7 +93,11 @@ export default function FriendRequestsButton({ userId }: FriendRequestsButtonPro
 
   async function handleReject(id: string) {
     setProcessing(id);
+    const req = requests.find(r => r.id === id);
     await rejectFriendRequest(id);
+    if (req) {
+      broadcastFriendRequestChange(req.senderId);
+    }
     await fetchRequests();
     router.refresh();
     setProcessing(null);

@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { archiveConversation, hideConversation, blockUser } from "@/lib/actions/settings";
 import { unfriend } from "@/lib/actions/chat";
 import { getOtherUser, formatLastSeen, getInitials } from "@/lib/chat-utils";
+import { broadcastFriendRequestChange } from "@/lib/realtime-service";
 import type { ConversationSummary, CurrentUser } from "@/lib/types/chat";
 
 interface ChatHeaderProps {
@@ -210,6 +211,7 @@ export function ChatHeader({ conversation, currentUser, connectionStatus }: Chat
                   onClick={async () => {
                     const res = await unfriend(otherUser.id);
                     if (res.success) {
+                      broadcastFriendRequestChange(otherUser.id);
                       notification.success(`Unfriended @${otherUser.username}`);
                       router.push("/chat");
                       router.refresh();
